@@ -208,6 +208,9 @@ function Dashboard({ session, onLogout }) {
               <div style={{ fontSize: 10, color: C.muted, fontWeight: 600, marginBottom: 4 }}>배차지연취소율</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: rt.delayCancelRate > 1 ? C.red : C.green }}>{rt.delayCancelRate.toFixed(2)}%</div>
             </div>
+            <div style={{ marginTop: 10, textAlign: "center", fontSize: 11, color: C.muted }}>
+              3분마다 자동 갱신 · 요기배달 × 모아라인
+            </div>
           </div>
         )}
 
@@ -251,9 +254,7 @@ function Dashboard({ session, onLogout }) {
           </div>
         )}
 
-        <div style={{ textAlign: "center", fontSize: 11, color: C.muted, paddingBottom: 24 }}>
-          3분마다 자동 갱신 · 요기배달 × 모아라인
-        </div>
+        <div style={{ paddingBottom: 24 }} />
       </div>
     </div>
   );
