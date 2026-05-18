@@ -121,7 +121,7 @@ export default async function handler(req, res) {
           const iMatch = rawDate.match(/(\d{4})-(\d{2})-(\d{2})/);
           if (iMatch) dateISO = `${iMatch[1]}-${iMatch[2]}-${iMatch[3]}`;
         }
-        if (dateISO) dateGroups.push({ date: dateISO, demandIdx: i, froIdx: i+1, froRateIdx: i+2, cancelIdx: i+3 });
+        if (dateISO) dateGroups.push({ date: dateISO, demandIdx: i, froIdx: i+1, froRateIdx: i+2, delayIdx: i+3, delayRateIdx: i+4 });
       }
 
       for (let r = colRowIdx + 1; r < froRows.length; r++) {
@@ -136,15 +136,24 @@ export default async function handler(req, res) {
           const fro = Number(String(row[g.froIdx] ?? "0").replace(/[^0-9.-]/g, "")) || 0;
           const froRateStr = String(row[g.froRateIdx] ?? "0%").replace("%", "").trim();
           const froRate = parseFloat(froRateStr) || 0;
-          const cancel = Number(String(row[g.cancelIdx] ?? "0").replace(/[^0-9.-]/g, "")) || 0;
-          daily.push({ date: g.date, demand, fro, fro_rate: froRate, cancel });
+          const delay = Number(String(row[g.delayIdx] ?? "0").replace(/[^0-9.-]/g, "")) || 0;
+          const delayRateStr = String(row[g.delayRateIdx] ?? "0%").replace("%", "").trim();
+          const delayRate = parseFloat(delayRateStr) || 0;
+          daily.push({ date: g.date, demand, fro, fro_rate: froRate, delay, delay_rate: delayRate });
         }
       }
       // 날짜 오름차순 정렬
       daily.sort((a, b) => a.date.localeCompare(b.date));
     }
 
-    return res.status(200).json({ zone: ZONE, realtime, daily });
+    // 존별 시작일 필터링
+    const START_DATES = {
+      "파주": "2026-05-15",
+    };
+    const startDate = START_DATES[ZONE] || null;
+    const filteredDaily = startDate ? daily.filter(d => d.date >= startDate) : daily;
+
+    return res.status(200).json({ zone: ZONE, realtime, daily: filteredDaily });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
