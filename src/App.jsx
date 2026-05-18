@@ -179,6 +179,9 @@ function Dashboard({ session, onLogout }) {
               </div>
             ))}
           </div>
+          <div style={{ marginTop: 10, fontSize: 11, color: C.muted, textAlign: "center", lineHeight: 1.6 }}>
+            ※ 상품보상액은 실제 오더에 따라 변동될 수 있어 예상 패널티 금액이 달라질 수 있습니다. (현재 평균 30,000원 기준 산정)
+          </div>
         </div>
 
         {/* 2. 실시간 현황 */}
