@@ -58,13 +58,15 @@ export default async function handler(req, res) {
       const cancelIdx = headers.findIndex(h => h === "취소주문" || h === "실패 주문");
       const inProgressIdx = headers.findIndex(h => h === "진행중" || h === "진행 주문");
       const waitIdx = headers.findIndex(h => h === "미배차");
-      const riderIdx = headers.findIndex(h => h === "실간 라이더" || h === "실시간 라이더");
+      const delayCancelIdx = headers.findIndex(h => h === "배차지연 취소" || h === "배차지연취소");
+      const delayCancelRateIdx = headers.findIndex(h => h === "배차지연 취소율" || h === "배차지연취소율");
 
       for (let i = dashHeaderIdx + 1; i < dashRows.length; i++) {
         const row = dashRows[i];
         if (!row) continue;
         const zone = String(row[zoneIdx] || "").trim();
         if (zone === ZONE) {
+          const delayCancelRateStr = String(row[delayCancelRateIdx] || "0%").replace("%", "").trim();
           realtime = {
             city: String(row[cityIdx] || "").trim(),
             zone,
@@ -73,7 +75,8 @@ export default async function handler(req, res) {
             cancel: parseInt(String(row[cancelIdx] || "0").replace(/[^0-9]/g, "")) || 0,
             inProgress: parseInt(String(row[inProgressIdx] || "0").replace(/[^0-9]/g, "")) || 0,
             waiting: parseInt(String(row[waitIdx] || "0").replace(/[^0-9]/g, "")) || 0,
-            riders: parseInt(String(row[riderIdx] || "0").replace(/[^0-9]/g, "")) || 0,
+            delayCancel: parseInt(String(row[delayCancelIdx] || "0").replace(/[^0-9]/g, "")) || 0,
+            delayCancelRate: parseFloat(delayCancelRateStr) || 0,
           };
           break;
         }
