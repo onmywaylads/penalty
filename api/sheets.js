@@ -37,12 +37,16 @@ export default async function handler(req, res) {
     // ── 시트1: 바로고 운영 대시보드 ──────────────────────────────
     const dashRows = await fetchSheet("바로고 운영 대시보드", "A1:Z300");
 
-    // 헤더 row 찾기 (도시/존 컬럼)
+    // 헤더 row 찾기 (도시/존 컬럼) - 어느 컬럼에 있든 찾기
     let dashHeaderIdx = -1;
+    let dashCityCol = -1;
     for (let i = 0; i < Math.min(dashRows.length, 20); i++) {
       const r = dashRows[i] || [];
-      if ((r[0] === "도시" || r[0] === "city") && (r[1] === "존" || r[1] === "zone" || r[1] === "zone_nm")) {
+      const cityCol = r.findIndex(h => h === "도시" || h === "city");
+      const zoneCol = r.findIndex(h => h === "존" || h === "zone" || h === "zone_nm");
+      if (cityCol >= 0 && zoneCol >= 0) {
         dashHeaderIdx = i;
+        dashCityCol = cityCol;
         break;
       }
     }
