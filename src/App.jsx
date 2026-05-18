@@ -190,17 +190,23 @@ function Dashboard({ session, onLogout }) {
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
               {[
-                { label: "Demand", val: rt.demand, color: C.text },
-                { label: "완료", val: rt.complete, color: C.primary },
-                { label: "취소", val: rt.cancel, color: C.red },
+                { label: "접수", val: rt.demand, color: C.text },
+                { label: "완료주문", val: rt.complete, color: C.primary },
+                { label: "취소주문", val: rt.cancel, color: C.red },
                 { label: "진행중", val: rt.inProgress, color: C.amber },
                 { label: "미배차", val: rt.waiting, color: "#7c3aed" },
+                { label: "배차지연취소", val: rt.delayCancel, color: C.red },
               ].map(({ label, val, color }) => (
                 <div key={label} style={{ background: "#f8fafc", borderRadius: 10, padding: "12px", textAlign: "center" }}>
                   <div style={{ fontSize: 10, color: C.muted, fontWeight: 600, marginBottom: 4 }}>{label}</div>
                   <div style={{ fontSize: 22, fontWeight: 800, color }}>{fmt(val)}</div>
                 </div>
               ))}
+            </div>
+            {/* 배차지연취소율 */}
+            <div style={{ marginTop: 10, background: "#fef2f2", borderRadius: 10, padding: "12px", textAlign: "center" }}>
+              <div style={{ fontSize: 10, color: C.muted, fontWeight: 600, marginBottom: 4 }}>배차지연취소율</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: rt.delayCancelRate > 1 ? C.red : C.green }}>{rt.delayCancelRate.toFixed(2)}%</div>
             </div>
           </div>
         )}
