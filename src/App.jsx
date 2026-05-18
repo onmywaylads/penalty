@@ -52,7 +52,7 @@ function LoginView({ onLogin }) {
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "32px 28px", width: "100%", maxWidth: 360, boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
           <div style={{ fontSize: 36, marginBottom: 8 }}>🚚</div>
-          <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>허브 실적 대시보드</div>
+          <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>B2B 현황 대시보드</div>
           <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>로그인 후 이용할 수 있어요</div>
         </div>
         <div style={{ marginBottom: 12 }}>
@@ -117,7 +117,7 @@ function Dashboard({ session, onLogout }) {
   const recent = daily.slice(-14);
 
   const thisMonth = new Date().toISOString().slice(0, 7);
-  const monthCancel = daily.filter(d => d.date.startsWith(thisMonth)).reduce((s, d) => s + d.cancel, 0);
+  const monthCancel = daily.reduce((s, d) => s + d.fro, 0); // 전체 기간 보상건수 합산
   const penalty = monthCancel * CANCEL_UNIT * PENALTY_RATE;
   const expectedFee = Math.max(0, MGMT_FEE - penalty);
 
@@ -129,20 +129,20 @@ function Dashboard({ session, onLogout }) {
         <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800 }}>🚚 {zone}존 실적</div>
-            <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>요기배달 · 바로고</div>
+            <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>요기배달 · 모아라인</div>
           </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <div style={{ textAlign: "right" }}>
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+            <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
               <button onClick={load} disabled={loading}
-                style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", color: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
-                {loading ? "갱신중..." : "🔄"}
+                style={{ background: "rgba(255,255,255,0.2)", border: "1px solid rgba(255,255,255,0.4)", color: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" }}>
+                {loading ? "갱신중..." : "🔄 새로고침"}
               </button>
-              {lastUpdated && <div style={{ fontSize: 10, opacity: 0.7, marginTop: 3 }}>{lastUpdated.toLocaleTimeString("ko-KR")} 기준</div>}
+              <button onClick={onLogout}
+                style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}>
+                로그아웃
+              </button>
             </div>
-            <button onClick={onLogout}
-              style={{ background: "rgba(255,255,255,0.15)", border: "1px solid rgba(255,255,255,0.3)", color: "#fff", borderRadius: 8, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>
-              로그아웃
-            </button>
+            {lastUpdated && <div style={{ fontSize: 10, opacity: 0.7 }}>{lastUpdated.toLocaleTimeString("ko-KR")} 기준</div>}
           </div>
         </div>
       </div>
@@ -209,13 +209,13 @@ function Dashboard({ session, onLogout }) {
         {recent.length > 0 && (
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", marginBottom: 14 }}>
             <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, background: "#f8fafc", fontSize: 13, fontWeight: 700, color: C.text }}>
-              📅 일별 FRO 실적 <span style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>최근 14일</span>
+              📅 일별 요기배달 실적 <span style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>계약일 기준</span>
             </div>
             <div style={{ overflowX: "auto" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
-                    {["날짜", "Demand", "완료", "FRO%", "취소"].map(h => (
+                    {["날짜", "접수", "보상건수", "보상비율", "배차지연(건)", "배차지연(%)"].map(h => (
                       <th key={h} style={{ padding: "9px 10px", textAlign: h === "날짜" ? "left" : "right", color: C.sub, fontWeight: 700, fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
@@ -232,9 +232,10 @@ function Dashboard({ session, onLogout }) {
                           {isToday && <span style={{ fontSize: 9, background: "#eff6ff", color: C.primary, borderRadius: 4, padding: "1px 4px", marginLeft: 4 }}>오늘</span>}
                         </td>
                         <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 700 }}>{fmt(r.demand)}</td>
-                        <td style={{ padding: "9px 10px", textAlign: "right", color: C.primary, fontWeight: 700 }}>{fmt(r.fro)}</td>
-                        <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 700, color: pctColor(r.fro_rate) }}>{r.fro_rate.toFixed(1)}%</td>
-                        <td style={{ padding: "9px 10px", textAlign: "right", color: r.cancel > 0 ? C.red : C.muted }}>{r.cancel > 0 ? r.cancel : "-"}</td>
+                        <td style={{ padding: "9px 10px", textAlign: "right", color: C.red, fontWeight: 700 }}>{r.fro > 0 ? fmt(r.fro) : "-"}</td>
+                        <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 700, color: r.fro_rate > 0 ? C.red : C.muted }}>{r.fro_rate > 0 ? r.fro_rate.toFixed(2)+"%" : "-"}</td>
+                        <td style={{ padding: "9px 10px", textAlign: "right", color: r.delay > 0 ? C.amber : C.muted }}>{r.delay > 0 ? fmt(r.delay) : "-"}</td>
+                        <td style={{ padding: "9px 10px", textAlign: "right", color: r.delay_rate > 0 ? C.amber : C.muted }}>{r.delay_rate > 0 ? r.delay_rate.toFixed(2)+"%" : "-"}</td>
                       </tr>
                     );
                   })}
@@ -245,7 +246,7 @@ function Dashboard({ session, onLogout }) {
         )}
 
         <div style={{ textAlign: "center", fontSize: 11, color: C.muted, paddingBottom: 24 }}>
-          3분마다 자동 갱신 · 요기배달 × 바로고
+          3분마다 자동 갱신 · 요기배달 × 모아라인
         </div>
       </div>
     </div>
