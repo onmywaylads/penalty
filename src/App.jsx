@@ -1,6 +1,18 @@
 import { useState, useEffect, useCallback } from "react";
 
 // 관리비/패널티 단가는 서버에서 계산 (클라이언트 노출 X)
+// 등급 단가는 SLA 카드에 표시용으로만 사용 (실제 계산은 서버)
+const GRADE_PRICES_DISPLAY = { A: 500, B: 400, C: 300, D: 200, E: 100, F: 0 };
+function GRADE_PRICE_FOR_DISPLAY(g) { return GRADE_PRICES_DISPLAY[g] || 0; }
+
+function SubItem({ label, val, color }) {
+  return (
+    <div style={{ textAlign: "center", minWidth: 0 }}>
+      <div style={{ fontSize: 9, color: "#94a3b8", fontWeight: 600, marginBottom: 3 }}>{label}</div>
+      <div style={{ fontSize: 12, fontWeight: 800, color: color || "#0f172a", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{val}</div>
+    </div>
+  );
+}
 
 function fmt(n) {
   return typeof n === "number" ? n.toLocaleString() : n;
@@ -123,6 +135,13 @@ function Dashboard({ session, onLogout }) {
     return () => clearInterval(t);
   }, [load]);
 
+  // 남동 zone만 탭 제목 변경 (파주는 그대로)
+  useEffect(() => {
+    if (data?.zone === "남동") {
+      document.title = "남동존 실적";
+    }
+  }, [data?.zone]);
+
   const rt = data?.realtime;
   const daily = data?.daily || [];
   const recent = daily.slice(-14);
@@ -137,8 +156,11 @@ function Dashboard({ session, onLogout }) {
   const penalty = billing?.penalty || 0;
   const expectedFee = billing?.expected || 0;
   // weekly 타입용
+  const estimate = billing?.estimate || null;
+  const actual = billing?.actual || null;
   const weeks = billing?.weeks || [];
-  const weeklyTotal = billing?.totalExpected || 0;
+  const slaWeekly = billing?.slaWeekly || null;
+  const startDateStr = billing?.startDate || null;
 
   return (
     <div style={{ fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif", background: C.bg, minHeight: "100vh" }}>
@@ -208,70 +230,96 @@ function Dashboard({ session, onLogout }) {
         {/* 1-2. 예상 관리비 (weekly 타입 - 남동 등) */}
         {billing && billing.type === "weekly" && (
         <>
-          {/* 이번달 누적 */}
+          {/* SLA 등급 (최근 3주) */}
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, marginBottom: 12 }}>💰 이번달 누적 관리비</div>
-            <div style={{ background: weeklyTotal < 0 ? "#fef2f2" : "#f0fdf4", borderRadius: 12, padding: "18px", textAlign: "center", border: `1px solid ${weeklyTotal < 0 ? "#fecaca" : "#bbf7d0"}` }}>
-              <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 6 }}>예상 수령 관리비</div>
-              <div style={{ fontSize: 36, fontWeight: 900, color: weeklyTotal < 0 ? C.red : C.green }}>{fmt(Math.round(weeklyTotal))}원</div>
-              <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>주차별 합산</div>
-            </div>
-            <div style={{ marginTop: 10, fontSize: 11, color: C.muted, textAlign: "center", lineHeight: 1.6 }}>
-              ※ 진행중인 주차는 등급 미확정 시 F등급(0원)으로 임시 산정되며, 등급 확정 시 자동 반영됩니다.
-            </div>
-          </div>
-
-          {/* 주별 상세 */}
-          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
-            <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, marginBottom: 12 }}>📊 주별 상세</div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-              {weeks.length === 0 && (
-                <div style={{ fontSize: 12, color: C.muted, textAlign: "center", padding: "20px" }}>데이터가 아직 없어요</div>
-              )}
-              {weeks.map((w, i) => {
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, marginBottom: 12 }}>🏆 SLA 등급 (최근 3주)</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+              {(slaWeekly || [
+                { label: "이번주", grade: null, start: "", end: "", isCurrent: true },
+                { label: "지난주", grade: null, start: "", end: "", isCurrent: false },
+                { label: "2주전", grade: null, start: "", end: "", isCurrent: false },
+              ]).map((w, i) => {
+                const subLabel = i === 0 ? "이번주" : i === 1 ? "지난주" : "2주전";
+                const isBeforeStart = startDateStr && w.end && w.end < startDateStr;
+                const noData = !w.grade || isBeforeStart;
                 const gradeColor = w.grade === "A" ? "#16a34a" : w.grade === "B" ? "#2563eb" : w.grade === "C" ? "#f59e0b" : w.grade === "D" ? "#f97316" : w.grade === "E" ? "#ef4444" : "#94a3b8";
-                const expColor = w.expected < 0 ? C.red : C.green;
+                const isCurrent = w.isCurrent;
                 return (
-                  <div key={i} style={{ border: `1px solid ${w.isThisWeek ? "#bfdbfe" : C.border}`, background: w.isThisWeek ? "#eff6ff" : "#fafafa", borderRadius: 12, padding: "12px 14px" }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{w.label}</span>
-                        <span style={{ fontSize: 10, color: C.muted }}>{w.start.slice(5)} ~ {w.end.slice(5)}</span>
-                        {w.isThisWeek && <span style={{ fontSize: 9, background: C.primary, color: "#fff", borderRadius: 4, padding: "1px 5px", fontWeight: 700 }}>진행중</span>}
-                      </div>
-                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-                        {w.grade ? (
-                          <>
-                            <span style={{ fontSize: 13, fontWeight: 900, color: gradeColor, background: "#fff", borderRadius: 6, padding: "2px 8px", border: `1px solid ${gradeColor}` }}>{w.grade}</span>
-                            <span style={{ fontSize: 10, color: C.muted }}>{fmt(w.unitPrice)}원</span>
-                            {w.isProvisional && <span style={{ fontSize: 9, color: C.amber }}>임시</span>}
-                          </>
-                        ) : (
-                          <span style={{ fontSize: 10, color: C.muted }}>등급 미확정</span>
-                        )}
-                      </div>
-                    </div>
-                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6, fontSize: 11 }}>
-                      <div style={{ background: "#fff", padding: "6px 8px", borderRadius: 6 }}>
-                        <span style={{ color: C.muted }}>관리비 </span>
-                        <span style={{ fontWeight: 700 }}>{fmt(w.complete)}건 × {fmt(w.unitPrice)} = </span>
-                        <span style={{ fontWeight: 800, color: C.primary }}>{fmt(w.managementFee)}원</span>
-                      </div>
-                      <div style={{ background: "#fff", padding: "6px 8px", borderRadius: 6 }}>
-                        <span style={{ color: C.muted }}>패널티 </span>
-                        <span style={{ fontWeight: 700 }}>{fmt(w.fro)}건 → </span>
-                        <span style={{ fontWeight: 800, color: C.red }}>-{fmt(Math.round(w.penalty))}원</span>
-                      </div>
-                    </div>
-                    <div style={{ marginTop: 8, textAlign: "right", fontSize: 13 }}>
-                      <span style={{ color: C.muted }}>수령액 </span>
-                      <span style={{ fontWeight: 900, color: expColor }}>{fmt(Math.round(w.expected))}원</span>
-                    </div>
+                  <div key={i} style={{
+                    background: isCurrent ? "linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%)" : noData ? "#f8fafc" : "#fafafa",
+                    border: `1px solid ${isCurrent ? "#93c5fd" : C.border}`,
+                    borderRadius: 10, padding: "12px 10px", textAlign: "center",
+                    opacity: noData && !isCurrent ? 0.55 : 1,
+                    boxShadow: isCurrent ? "0 2px 8px rgba(37,99,235,0.1)" : "none",
+                  }}>
+                    <div style={{ fontSize: 10, color: isCurrent ? C.primary : C.muted, fontWeight: 700, marginBottom: 2 }}>{w.label || ""} · {subLabel}</div>
+                    <div style={{ fontSize: 9, color: C.muted, marginBottom: 8 }}>{w.start ? `${w.start.slice(5).replace("-", "/")} ~ ${w.end.slice(5).replace("-", "/")}` : ""}</div>
+                    {noData ? (
+                      <>
+                        <div style={{ fontSize: 14, color: "#cbd5e1", fontWeight: 700, padding: "12px 0" }}>-</div>
+                        <div style={{ fontSize: 10, visibility: "hidden" }}>.</div>
+                      </>
+                    ) : (
+                      <>
+                        <span style={{ display: "inline-block", fontSize: 22, fontWeight: 900, padding: "4px 14px", borderRadius: 8, border: `2px solid ${gradeColor}`, color: gradeColor, background: "#fff" }}>{w.grade}</span>
+                        <div style={{ fontSize: 10, color: gradeColor, marginTop: 6, fontWeight: 700 }}>{fmt(GRADE_PRICE_FOR_DISPLAY(w.grade))}원/건</div>
+                      </>
+                    )}
                   </div>
                 );
               })}
             </div>
+            {startDateStr && (
+              <div style={{ marginTop: 10, fontSize: 11, color: C.muted, textAlign: "center" }}>
+                시작일({startDateStr.slice(5).replace("-", "/")}) 이전 주차는 데이터가 없습니다
+              </div>
+            )}
           </div>
+
+          {/* 이번주 관리비 (예상 vs 실제) */}
+          {(estimate || actual) && (
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, marginBottom: 12 }}>💰 이번주 관리비</div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }} className="mgmt-grid-responsive">
+              {/* 예상 */}
+              {estimate && (
+              <div style={{ borderRadius: 12, padding: 14, border: "1px solid #fde68a", background: "linear-gradient(135deg, #fefce8 0%, #fff 100%)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span style={{ fontSize: 10, padding: "3px 9px", borderRadius: 4, fontWeight: 700, color: "#fff", background: "#f59e0b" }}>예상</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.sub }}>이번주 예상 수령액</span>
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: "#f59e0b", marginTop: 8, marginBottom: 12, letterSpacing: "-0.5px" }}>
+                  {fmt(Math.round(estimate.amount))}원
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, paddingTop: 10, borderTop: "1px dashed rgba(148,163,184,0.4)" }}>
+                  <SubItem label="예상건수" val={`${fmt(estimate.count)}건`} />
+                  <SubItem label="등급" val={estimate.grade ? `${estimate.grade} (${fmt(estimate.unitPrice)}원)` : "-"} color={C.primary} />
+                  <SubItem label="패널티" val={`-${fmt(Math.round(estimate.penalty))}`} color={C.red} />
+                </div>
+              </div>
+              )}
+
+              {/* 실제 */}
+              {actual && (
+              <div style={{ borderRadius: 12, padding: 14, border: "1px solid #bbf7d0", background: "linear-gradient(135deg, #f0fdf4 0%, #fff 100%)" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
+                  <span style={{ fontSize: 10, padding: "3px 9px", borderRadius: 4, fontWeight: 700, color: "#fff", background: "#16a34a" }}>실제</span>
+                  <span style={{ fontSize: 12, fontWeight: 700, color: C.sub }}>이번주 누적 수령액</span>
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 900, color: actual.amount < 0 ? C.red : C.green, marginTop: 8, marginBottom: 12, letterSpacing: "-0.5px" }}>
+                  {fmt(Math.round(actual.amount))}원
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, paddingTop: 10, borderTop: "1px dashed rgba(148,163,184,0.4)" }}>
+                  <SubItem label="누적건수" val={`${fmt(actual.count)}건`} />
+                  <SubItem label="등급" val={actual.grade ? `${actual.grade} (${fmt(actual.unitPrice)}원)` : "-"} color={C.primary} />
+                  <SubItem label="패널티" val={`-${fmt(Math.round(actual.penalty))}`} color={C.red} />
+                </div>
+              </div>
+              )}
+            </div>
+            <style>{`@media (max-width: 540px) { .mgmt-grid-responsive { grid-template-columns: 1fr !important; } }`}</style>
+          </div>
+          )}
         </>
         )}
 
@@ -304,6 +352,48 @@ function Dashboard({ session, onLogout }) {
             </div>
             <div style={{ marginTop: 10, textAlign: "center", fontSize: 11, color: C.muted }}>
               3분마다 자동 갱신 · 요기배달 × {type === "weekly" ? "바로고" : "모아라인"}
+            </div>
+          </div>
+        )}
+
+        {/* 주별 누적 상세 (weekly 타입만) */}
+        {type === "weekly" && weeks.length > 0 && (
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", marginBottom: 14 }}>
+            <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, background: "#f8fafc", fontSize: 13, fontWeight: 700, color: C.text }}>
+              📊 주별 누적 상세
+            </div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc" }}>
+                    {["주차", "기간", "등급", "건수", "패널티", "수령액"].map((h, i) => (
+                      <th key={h} style={{ padding: "9px 10px", textAlign: i === 0 || i === 1 ? "left" : i === 2 ? "center" : "right", color: C.sub, fontWeight: 700, fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {weeks.map((w, i) => {
+                    const isLast = i === weeks.length - 1;
+                    const gradeColor = w.grade === "A" ? "#16a34a" : w.grade === "B" ? "#2563eb" : w.grade === "C" ? "#f59e0b" : w.grade === "D" ? "#f97316" : w.grade === "E" ? "#ef4444" : "#94a3b8";
+                    return (
+                      <tr key={i} style={{ borderBottom: "1px solid #f1f5f9", background: isLast ? "#eff6ff" : "#fff" }}>
+                        <td style={{ padding: "9px 10px", whiteSpace: "nowrap" }}>
+                          <span style={{ display: "inline-block", background: isLast ? C.primary : "#64748b", color: "#fff", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 4 }}>{w.label}</span>
+                        </td>
+                        <td style={{ padding: "9px 10px", color: C.sub, whiteSpace: "nowrap" }}>{w.start.slice(5).replace("-", "/")} ~ {w.end.slice(5).replace("-", "/")}</td>
+                        <td style={{ padding: "9px 10px", textAlign: "center" }}>
+                          {w.grade ? (
+                            <span style={{ display: "inline-block", fontSize: 11, fontWeight: 900, padding: "1px 8px", borderRadius: 4, border: `1.5px solid ${gradeColor}`, background: "#fff", color: gradeColor }}>{w.grade}</span>
+                          ) : <span style={{ color: C.muted }}>-</span>}
+                        </td>
+                        <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 700 }}>{fmt(w.complete)}건</td>
+                        <td style={{ padding: "9px 10px", textAlign: "right", color: C.red, fontWeight: 700 }}>{w.penalty > 0 ? `-${fmt(Math.round(w.penalty))}` : "-"}</td>
+                        <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 900, color: w.amount < 0 ? C.red : C.green, whiteSpace: "nowrap" }}>{fmt(Math.round(w.amount))}원</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
             </div>
           </div>
         )}
