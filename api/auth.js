@@ -2,7 +2,7 @@
 // 새 존 추가 시 여기에 한 줄 추가
 const ACCOUNTS = {
   // 고정 관리비 타입
-  "paju": { password: "0515", zone: "파주", type: "fixed", fee: 700000 },
+  "paju": { password: "0515", zone: "파주", type: "fixed", fee: 700000, startDate: "2026-05-15" },
   // 건당 관리비 타입 (Weekly SLA 등급별 단가)
   "namdong": { password: "0521", zone: "남동", type: "weekly", startDate: "2026-05-21" },
 };
