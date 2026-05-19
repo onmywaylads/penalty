@@ -135,12 +135,10 @@ function Dashboard({ session, onLogout }) {
     return () => clearInterval(t);
   }, [load]);
 
-  // 남동 zone만 탭 제목 변경 (파주는 그대로)
+  // 탭 제목 고정
   useEffect(() => {
-    if (data?.zone === "남동") {
-      document.title = "남동존 실적";
-    }
-  }, [data?.zone]);
+    document.title = "B2B 현황 대시보드";
+  }, []);
 
   const rt = data?.realtime;
   const daily = data?.daily || [];
