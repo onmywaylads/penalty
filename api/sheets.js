@@ -1,10 +1,27 @@
+import { verify, getAccountByUsername } from "./auth.js";
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
 
+  // ── 토큰 검증 ──────────────────────────────────────────────
+  const authHeader = req.headers.authorization || "";
+  const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+  const payload = verify(token);
+  if (!payload) {
+    return res.status(401).json({ error: "인증이 필요해요" });
+  }
+  const account = getAccountByUsername(payload.u);
+  if (!account) {
+    return res.status(401).json({ error: "유효하지 않은 계정" });
+  }
+
+  // 서버에서 zone 결정 (클라이언트가 zone 파라미터로 다른 존 못 봄)
+  const ZONE = account.zone;
+
   const SPREADSHEET_ID = "1c_43XVjrufy0cEoOA5eBlx49h6u4RoYjm-g02iOztCQ";
-  const ZONE = req.query.zone || "파주"; // 기본값 파주
 
   try {
     // 1. access_token 발급
@@ -37,16 +54,13 @@ export default async function handler(req, res) {
     // ── 시트1: 바로고 운영 대시보드 ──────────────────────────────
     const dashRows = await fetchSheet("바로고 운영 대시보드", "A1:Z300");
 
-    // 헤더 row 찾기 (도시/존 컬럼) - 어느 컬럼에 있든 찾기
     let dashHeaderIdx = -1;
-    let dashCityCol = -1;
     for (let i = 0; i < Math.min(dashRows.length, 20); i++) {
       const r = dashRows[i] || [];
       const cityCol = r.findIndex(h => h === "도시" || h === "city");
       const zoneCol = r.findIndex(h => h === "존" || h === "zone" || h === "zone_nm");
       if (cityCol >= 0 && zoneCol >= 0) {
         dashHeaderIdx = i;
-        dashCityCol = cityCol;
         break;
       }
     }
@@ -54,7 +68,6 @@ export default async function handler(req, res) {
     let realtime = null;
     if (dashHeaderIdx >= 0) {
       const headers = dashRows[dashHeaderIdx];
-      // 컬럼 인덱스 찾기
       const cityIdx = headers.findIndex(h => h === "도시" || h === "city");
       const zoneIdx = headers.findIndex(h => h === "존" || h === "zone" || h === "zone_nm");
       const demandIdx = headers.findIndex(h => h === "Demand" || h === "demand");
@@ -149,7 +162,6 @@ export default async function handler(req, res) {
           daily.push({ date: g.date, demand, fro, fro_rate: froRate, delay, delay_rate: delayRate });
         }
       }
-      // 날짜 오름차순 정렬
       daily.sort((a, b) => a.date.localeCompare(b.date));
     }
 
@@ -157,10 +169,34 @@ export default async function handler(req, res) {
     const START_DATES = {
       "파주": "2026-05-15",
     };
-    const startDate = START_DATES[ZONE] || null;
+    const startDate = START_DATES[ZONE] || account.startDate || null;
     const filteredDaily = startDate ? daily.filter(d => d.date >= startDate) : daily;
 
-    return res.status(200).json({ zone: ZONE, realtime, daily: filteredDaily });
+    // ── 서버에서 관리비 계산 (단가/fee는 클라이언트로 안 보냄) ──
+    // 패널티: FRO(보상건수) × 30,000 × 30%
+    const totalFro = filteredDaily.reduce((s, d) => s + (d.fro || 0), 0);
+    const penalty = totalFro * 30000 * 0.3;
+
+    let billing = null;
+    if (account.fee != null) {
+      // 고정 관리비 (파주 같은 경우)
+      const expected = account.fee - penalty;
+      billing = {
+        type: "fixed",
+        baseFee: account.fee,
+        totalFro,
+        penalty,
+        expected,
+      };
+    }
+    // weekly 타입은 다음 단계에서 sla.js 만들면서 추가
+
+    return res.status(200).json({
+      zone: ZONE,
+      realtime,
+      daily: filteredDaily,
+      billing,
+    });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
