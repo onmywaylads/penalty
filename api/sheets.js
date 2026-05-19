@@ -200,7 +200,9 @@ export default async function handler(req, res) {
       const thisWeekPenalty = thisWeekFro * 30000 * 0.3;
 
       const estimate = {
-        count: lastWeekComplete,
+        demand: sumDemand(lastWeekDaily),
+        fro: sumFro(lastWeekDaily),
+        complete: lastWeekComplete,
         grade: thisGrade,
         unitPrice: thisUnit,
         management: lastWeekComplete * thisUnit,
@@ -211,7 +213,9 @@ export default async function handler(req, res) {
       // 실제 = 이번주 누적 완료건수 × 이번주 등급 단가 - 이번주 누적 패널티
       const thisWeekComplete = sumComplete(thisWeekDaily);
       const actual = {
-        count: thisWeekComplete,
+        demand: sumDemand(thisWeekDaily),
+        fro: sumFro(thisWeekDaily),
+        complete: thisWeekComplete,
         grade: thisGrade,
         unitPrice: thisUnit,
         management: thisWeekComplete * thisUnit,
@@ -227,9 +231,10 @@ export default async function handler(req, res) {
 
       const weeksData = validWeeks.map((w, idx) => {
         const inRange = filteredDaily.filter(d => d.date >= w.start && d.date <= w.end);
+        const demand = sumDemand(inRange);
+        const fro = sumFro(inRange);
         const complete = sumComplete(inRange);
-        const fro = inRange.reduce((s, d) => s + (d.fro || 0), 0);
-        const reverseIdx = lastIdx - idx; // 0=이번주, 1=지난주, 2=2주전
+        const reverseIdx = lastIdx - idx;
         let grade = null;
         if (reverseIdx === 0) grade = weeklyGrades?.thisWeek?.grade || null;
         else if (reverseIdx === 1) grade = weeklyGrades?.lastWeek?.grade || null;
@@ -243,8 +248,9 @@ export default async function handler(req, res) {
           end: w.end,
           grade,
           unitPrice,
-          complete,
+          demand,
           fro,
+          complete,
           management,
           penalty,
           amount: management - penalty,
@@ -273,9 +279,15 @@ export default async function handler(req, res) {
   }
 }
 
-// 완료건수 추정: demand - fro - delay (일별 FRO 시트엔 직접 완료 컬럼이 없음)
+// 완료건수 = 접수(demand) - 보상건수(fro)
 function sumComplete(arr) {
-  return arr.reduce((s, d) => s + Math.max(0, (d.demand || 0) - (d.fro || 0) - (d.delay || 0)), 0);
+  return arr.reduce((s, d) => s + Math.max(0, (d.demand || 0) - (d.fro || 0)), 0);
+}
+function sumDemand(arr) {
+  return arr.reduce((s, d) => s + (d.demand || 0), 0);
+}
+function sumFro(arr) {
+  return arr.reduce((s, d) => s + (d.fro || 0), 0);
 }
 
 // 시작일부터 주 단위로 나누기 (첫 주만 짧을 수 있고, 둘째 주부터 월~일)
