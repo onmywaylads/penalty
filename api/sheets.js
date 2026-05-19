@@ -1,4 +1,5 @@
-import { verify, getAccountByUsername } from "./auth.js";
+import { verify, getAccountByUsername, GRADE_PRICES } from "./auth.js";
+import { getSlaGrades } from "./sla.js";
 
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
@@ -18,9 +19,8 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: "유효하지 않은 계정" });
   }
 
-  // 서버에서 zone 결정 (클라이언트가 zone 파라미터로 다른 존 못 봄)
+  // 서버에서 zone 결정
   const ZONE = account.zone;
-
   const SPREADSHEET_ID = "1c_43XVjrufy0cEoOA5eBlx49h6u4RoYjm-g02iOztCQ";
 
   try {
@@ -165,21 +165,18 @@ export default async function handler(req, res) {
       daily.sort((a, b) => a.date.localeCompare(b.date));
     }
 
-    // 존별 시작일 필터링
-    const START_DATES = {
-      "파주": "2026-05-15",
-    };
-    const startDate = START_DATES[ZONE] || account.startDate || null;
-    const filteredDaily = startDate ? daily.filter(d => d.date >= startDate) : daily;
+    // 시작일 필터
+    const startDate = account.startDate || "2000-01-01";
+    const filteredDaily = daily.filter(d => d.date >= startDate);
 
-    // ── 서버에서 관리비 계산 (단가/fee는 클라이언트로 안 보냄) ──
-    // 패널티: FRO(보상건수) × 30,000 × 30%
-    const totalFro = filteredDaily.reduce((s, d) => s + (d.fro || 0), 0);
-    const penalty = totalFro * 30000 * 0.3;
-
+    // ── 정산 계산 ────────────────────────────────────────────
     let billing = null;
-    if (account.fee != null) {
-      // 고정 관리비 (파주 같은 경우)
+    let dailyWithGrade = filteredDaily;
+
+    if (account.type === "fixed") {
+      // 고정 관리비 (파주)
+      const totalFro = filteredDaily.reduce((s, d) => s + (d.fro || 0), 0);
+      const penalty = totalFro * 30000 * 0.3;
       const expected = account.fee - penalty;
       billing = {
         type: "fixed",
@@ -188,16 +185,121 @@ export default async function handler(req, res) {
         penalty,
         expected,
       };
+    } else if (account.type === "weekly") {
+      // 건당 관리비 - SLA 등급 가져와서 주별 계산
+      const sla = await getSlaGrades(ZONE);
+      const weeklyGrades = sla.weekly || {};
+      const dailyGrades = sla.daily || {};
+
+      // 일별에 Daily 등급 매핑
+      dailyWithGrade = filteredDaily.map(d => ({
+        ...d,
+        grade: dailyGrades[d.date] || null,
+      }));
+
+      // 주별 구간 생성
+      const weeks = buildWeeks(account.startDate);
+      const today = new Date().toISOString().slice(0, 10);
+
+      // 오늘까지의 주만
+      const validWeeks = weeks.filter(w => w.start <= today);
+      const lastIdx = validWeeks.length - 1; // 진행중인 주의 index
+
+      const weeksData = validWeeks.map((w, idx) => {
+        const inRange = filteredDaily.filter(d => d.date >= w.start && d.date <= w.end);
+        // 완료건수: 일별 FRO 시트엔 직접적 "완료" 컬럼이 없어 demand 사용
+        // demand - fro - delay 가 진짜 완료에 가까움
+        const complete = inRange.reduce((s, d) => s + Math.max(0, (d.demand || 0) - (d.fro || 0) - (d.delay || 0)), 0);
+        const fro = inRange.reduce((s, d) => s + (d.fro || 0), 0);
+
+        // 등급 결정
+        const reverseIdx = lastIdx - idx; // 0=이번주, 1=지난주, 2=2주전
+        const isThisWeek = reverseIdx === 0;
+        let grade = null;
+        let isProvisional = false;
+
+        if (isThisWeek) {
+          grade = weeklyGrades.thisWeek || null;
+          if (!grade) { grade = "F"; isProvisional = true; }
+        } else if (reverseIdx === 1) {
+          grade = weeklyGrades.lastWeek || null;
+        } else if (reverseIdx === 2) {
+          grade = weeklyGrades.twoWeeksAgo || null;
+        }
+
+        const unitPrice = grade ? (GRADE_PRICES[grade] || 0) : 0;
+        const managementFee = complete * unitPrice;
+        const penalty = fro * 30000 * 0.3;
+        const expected = managementFee - penalty; // F등급 + 패널티 있으면 마이너스 가능
+
+        return {
+          label: `${idx + 1}주차`,
+          start: w.start,
+          end: w.end,
+          isThisWeek,
+          grade,
+          isProvisional,
+          unitPrice,
+          complete,
+          fro,
+          managementFee,
+          penalty,
+          expected,
+        };
+      });
+
+      const totalExpected = weeksData.reduce((s, w) => s + w.expected, 0);
+
+      billing = {
+        type: "weekly",
+        weeks: weeksData,
+        totalExpected,
+      };
     }
-    // weekly 타입은 다음 단계에서 sla.js 만들면서 추가
 
     return res.status(200).json({
       zone: ZONE,
+      type: account.type || "fixed",
       realtime,
-      daily: filteredDaily,
+      daily: dailyWithGrade,
       billing,
     });
   } catch (e) {
     return res.status(500).json({ error: e.message });
   }
+}
+
+// 시작일부터 오늘까지의 주별 구간 만들기
+// 첫 주: startDate ~ 그 주의 일요일
+// 둘째 주부터: 월~일
+function buildWeeks(startDateStr) {
+  const weeks = [];
+  const start = new Date(startDateStr + "T00:00:00");
+  const today = new Date();
+  today.setHours(23, 59, 59, 999);
+
+  // 첫 주
+  const firstDay = start.getDay(); // 0=일, 1=월
+  const daysToSunday = firstDay === 0 ? 0 : 7 - firstDay;
+  const firstWeekEnd = new Date(start);
+  firstWeekEnd.setDate(start.getDate() + daysToSunday);
+
+  weeks.push({ start: fmtDate(start), end: fmtDate(firstWeekEnd) });
+
+  // 다음주부터 월~일
+  let cursor = new Date(firstWeekEnd);
+  cursor.setDate(cursor.getDate() + 1);
+  while (cursor <= today) {
+    const weekStart = new Date(cursor);
+    const weekEnd = new Date(cursor);
+    weekEnd.setDate(weekEnd.getDate() + 6);
+    weeks.push({ start: fmtDate(weekStart), end: fmtDate(weekEnd) });
+    cursor.setDate(cursor.getDate() + 7);
+  }
+
+  return weeks;
+}
+
+function fmtDate(d) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
