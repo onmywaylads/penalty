@@ -1,7 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 
-const CANCEL_UNIT = 30000;
-const PENALTY_RATE = 0.30;
+// 관리비/패널티 단가는 서버에서 계산 (클라이언트 노출 X)
 
 function fmt(n) {
   return typeof n === "number" ? n.toLocaleString() : n;
@@ -37,8 +36,10 @@ function LoginView({ onLogin }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "로그인 실패");
-      sessionStorage.setItem("hub_session", JSON.stringify(data));
-      onLogin(data);
+      // 응답엔 token만 있음 (zone/fee는 서버에서 토큰으로 조회)
+      const session = { token: data.token, id };
+      sessionStorage.setItem("hub_session", JSON.stringify(session));
+      onLogin(session);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -85,7 +86,7 @@ function LoginView({ onLogin }) {
 }
 
 function Dashboard({ session, onLogout }) {
-  const { zone, fee: MGMT_FEE } = session;
+  const { token } = session;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -93,9 +94,19 @@ function Dashboard({ session, onLogout }) {
 
   const load = useCallback(async () => {
     try {
-      const res = await fetch(`/api/sheets?zone=${encodeURIComponent(zone)}`);
+      const res = await fetch("/api/sheets", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const json = await res.json();
-      if (json.error) throw new Error(json.error);
+      if (json.error) {
+        // 토큰 만료/무효면 로그아웃
+        if (res.status === 401) {
+          sessionStorage.removeItem("hub_session");
+          onLogout();
+          return;
+        }
+        throw new Error(json.error);
+      }
       setData(json);
       setLastUpdated(new Date());
       setError("");
@@ -104,7 +115,7 @@ function Dashboard({ session, onLogout }) {
     } finally {
       setLoading(false);
     }
-  }, [zone]);
+  }, [token, onLogout]);
 
   useEffect(() => {
     load();
@@ -115,11 +126,14 @@ function Dashboard({ session, onLogout }) {
   const rt = data?.realtime;
   const daily = data?.daily || [];
   const recent = daily.slice(-14);
+  const zone = data?.zone || "";
 
-  const thisMonth = new Date().toISOString().slice(0, 7);
-  const monthCancel = daily.reduce((s, d) => s + d.fro, 0); // 전체 기간 보상건수 합산
-  const penalty = monthCancel * CANCEL_UNIT * PENALTY_RATE;
-  const expectedFee = Math.max(0, MGMT_FEE - penalty);
+  // 서버에서 계산된 관리비 사용 (클라이언트 계산 X)
+  const billing = data?.billing;
+  const MGMT_FEE = billing?.baseFee || 0;
+  const monthCancel = billing?.totalFro || 0;
+  const penalty = billing?.penalty || 0;
+  const expectedFee = billing?.expected || 0;
 
   return (
     <div style={{ fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif", background: C.bg, minHeight: "100vh" }}>
@@ -158,13 +172,14 @@ function Dashboard({ session, onLogout }) {
           </div>
         )}
 
-        {/* 1. 예상 관리비 */}
+        {/* 1. 예상 관리비 (billing 있을 때만) */}
+        {billing && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, marginBottom: 12 }}>💰 이번달 예상 관리비</div>
           <div style={{ background: expectedFee < MGMT_FEE * 0.7 ? "#fef2f2" : "#f0fdf4", borderRadius: 12, padding: "18px", textAlign: "center", border: `1px solid ${expectedFee < MGMT_FEE * 0.7 ? "#fecaca" : "#bbf7d0"}`, marginBottom: 12 }}>
             <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 6 }}>예상 수령 관리비</div>
             <div style={{ fontSize: 36, fontWeight: 900, color: expectedFee < MGMT_FEE * 0.7 ? C.red : C.green }}>{fmt(Math.round(expectedFee))}원</div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>기본 관리비 {fmt(MGMT_FEE)}원 대비 {((expectedFee / MGMT_FEE) * 100).toFixed(1)}%</div>
+            <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>기본 관리비 {fmt(MGMT_FEE)}원 대비 {MGMT_FEE > 0 ? ((expectedFee / MGMT_FEE) * 100).toFixed(1) : 0}%</div>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8 }}>
             {[
@@ -183,6 +198,7 @@ function Dashboard({ session, onLogout }) {
             ※ 상품보상액은 실제 오더에 따라 변동될 수 있어 예상 패널티 금액이 달라질 수 있습니다. (현재 평균 30,000원 기준 산정)
           </div>
         </div>
+        )}
 
         {/* 2. 실시간 현황 */}
         {rt && (
