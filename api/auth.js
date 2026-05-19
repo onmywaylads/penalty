@@ -1,8 +1,15 @@
 // 존별 계정 관리 (서버 전용, 클라이언트로 노출되지 않음)
 // 새 존 추가 시 여기에 한 줄 추가
 const ACCOUNTS = {
-  "paju": { password: "0515", zone: "파주", fee: 700000 },
-  // "namdong": { password: "0521", zone: "남동", type: "weekly", startDate: "2026-05-21" },
+  // 고정 관리비 타입
+  "paju": { password: "0515", zone: "파주", type: "fixed", fee: 700000 },
+  // 건당 관리비 타입 (Weekly SLA 등급별 단가)
+  "namdong": { password: "0521", zone: "남동", type: "weekly", startDate: "2026-05-21" },
+};
+
+// 등급별 건당 단가 (서버 전용)
+export const GRADE_PRICES = {
+  A: 500, B: 400, C: 300, D: 200, E: 100, F: 0,
 };
 
 // 간단한 HMAC 기반 토큰 (외부 라이브러리 없이)
