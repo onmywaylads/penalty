@@ -64,7 +64,7 @@ function LoginView({ onLogin }) {
       <link href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css" rel="stylesheet" />
       <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 16, padding: "32px 28px", width: "100%", maxWidth: 360, boxShadow: "0 4px 24px rgba(0,0,0,0.08)" }}>
         <div style={{ textAlign: "center", marginBottom: 28 }}>
-          <div style={{ fontSize: 36, marginBottom: 8 }}>🚚</div>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>🛵</div>
           <div style={{ fontSize: 20, fontWeight: 800, color: C.text }}>B2B 현황 대시보드</div>
           <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>로그인 후 이용할 수 있어요</div>
         </div>
@@ -169,7 +169,7 @@ function Dashboard({ session, onLogout }) {
       <div style={{ background: C.primary, color: "#fff", padding: "14px 20px" }}>
         <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontSize: 18, fontWeight: 800 }}>🚚 {zone}존 실적</div>
+            <div style={{ fontSize: 18, fontWeight: 800 }}>🛵 {zone}존 실적</div>
             <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>요기배달 · {type === "weekly" ? "바로고" : "모아라인"}</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
@@ -292,7 +292,7 @@ function Dashboard({ session, onLogout }) {
                   {fmt(Math.round(estimate.amount))}원
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, paddingTop: 10, borderTop: "1px dashed rgba(148,163,184,0.4)" }}>
-                  <SubItem label="예상건수" val={`${fmt(estimate.count)}건`} />
+                  <SubItem label="완료건수" val={`${fmt(estimate.complete)}건`} />
                   <SubItem label="등급" val={estimate.grade ? `${estimate.grade} (${fmt(estimate.unitPrice)}원)` : "-"} color={C.primary} />
                   <SubItem label="패널티" val={`-${fmt(Math.round(estimate.penalty))}`} color={C.red} />
                 </div>
@@ -310,7 +310,7 @@ function Dashboard({ session, onLogout }) {
                   {fmt(Math.round(actual.amount))}원
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, paddingTop: 10, borderTop: "1px dashed rgba(148,163,184,0.4)" }}>
-                  <SubItem label="누적건수" val={`${fmt(actual.count)}건`} />
+                  <SubItem label="완료건수" val={`${fmt(actual.complete)}건`} />
                   <SubItem label="등급" val={actual.grade ? `${actual.grade} (${fmt(actual.unitPrice)}원)` : "-"} color={C.primary} />
                   <SubItem label="패널티" val={`-${fmt(Math.round(actual.penalty))}`} color={C.red} />
                 </div>
@@ -366,8 +366,8 @@ function Dashboard({ session, onLogout }) {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
-                    {["주차", "기간", "등급", "건수", "패널티", "수령액"].map((h, i) => (
-                      <th key={h} style={{ padding: "9px 10px", textAlign: i === 0 || i === 1 ? "left" : i === 2 ? "center" : "right", color: C.sub, fontWeight: 700, fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h}</th>
+                    {["주차", "기간", "등급", "접수", "보상", "완료", "패널티", "수령액"].map((h, i) => (
+                      <th key={h} style={{ padding: "9px 8px", textAlign: i === 0 || i === 1 ? "left" : i === 2 ? "center" : "right", color: C.sub, fontWeight: 700, fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -377,18 +377,20 @@ function Dashboard({ session, onLogout }) {
                     const gradeColor = w.grade === "A" ? "#16a34a" : w.grade === "B" ? "#2563eb" : w.grade === "C" ? "#f59e0b" : w.grade === "D" ? "#f97316" : w.grade === "E" ? "#ef4444" : "#94a3b8";
                     return (
                       <tr key={i} style={{ borderBottom: "1px solid #f1f5f9", background: isLast ? "#eff6ff" : "#fff" }}>
-                        <td style={{ padding: "9px 10px", whiteSpace: "nowrap" }}>
+                        <td style={{ padding: "9px 8px", whiteSpace: "nowrap" }}>
                           <span style={{ display: "inline-block", background: isLast ? C.primary : "#64748b", color: "#fff", fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 4 }}>{w.label}</span>
                         </td>
-                        <td style={{ padding: "9px 10px", color: C.sub, whiteSpace: "nowrap" }}>{w.start.slice(5).replace("-", "/")} ~ {w.end.slice(5).replace("-", "/")}</td>
-                        <td style={{ padding: "9px 10px", textAlign: "center" }}>
+                        <td style={{ padding: "9px 8px", color: C.sub, whiteSpace: "nowrap" }}>{w.start.slice(5).replace("-", "/")} ~ {w.end.slice(5).replace("-", "/")}</td>
+                        <td style={{ padding: "9px 8px", textAlign: "center" }}>
                           {w.grade ? (
                             <span style={{ display: "inline-block", fontSize: 11, fontWeight: 900, padding: "1px 8px", borderRadius: 4, border: `1.5px solid ${gradeColor}`, background: "#fff", color: gradeColor }}>{w.grade}</span>
                           ) : <span style={{ color: C.muted }}>-</span>}
                         </td>
-                        <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 700 }}>{fmt(w.complete)}건</td>
-                        <td style={{ padding: "9px 10px", textAlign: "right", color: C.red, fontWeight: 700 }}>{w.penalty > 0 ? `-${fmt(Math.round(w.penalty))}` : "-"}</td>
-                        <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 900, color: w.amount < 0 ? C.red : C.green, whiteSpace: "nowrap" }}>{fmt(Math.round(w.amount))}원</td>
+                        <td style={{ padding: "9px 8px", textAlign: "right", fontWeight: 700 }}>{fmt(w.demand)}</td>
+                        <td style={{ padding: "9px 8px", textAlign: "right", color: w.fro > 0 ? C.red : C.muted, fontWeight: 700 }}>{w.fro > 0 ? fmt(w.fro) : "-"}</td>
+                        <td style={{ padding: "9px 8px", textAlign: "right", fontWeight: 700 }}>{fmt(w.complete)}</td>
+                        <td style={{ padding: "9px 8px", textAlign: "right", color: C.red, fontWeight: 700 }}>{w.penalty > 0 ? `-${fmt(Math.round(w.penalty))}` : "-"}</td>
+                        <td style={{ padding: "9px 8px", textAlign: "right", fontWeight: 900, color: w.amount < 0 ? C.red : C.green, whiteSpace: "nowrap" }}>{fmt(Math.round(w.amount))}원</td>
                       </tr>
                     );
                   })}
@@ -409,7 +411,7 @@ function Dashboard({ session, onLogout }) {
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
                     {(type === "weekly"
-                      ? ["날짜", "등급", "접수", "보상건수", "보상비율", "배차지연(건)", "배차지연(%)"]
+                      ? ["날짜", "등급", "접수", "보상건수", "완료", "보상비율", "배차지연(건)", "배차지연(%)"]
                       : ["날짜", "접수", "보상건수", "보상비율", "배차지연(건)", "배차지연(%)"]
                     ).map(h => (
                       <th key={h} style={{ padding: "9px 10px", textAlign: h === "날짜" ? "left" : "center", color: C.sub, fontWeight: 700, fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h}</th>
@@ -422,6 +424,7 @@ function Dashboard({ session, onLogout }) {
                     const isWeekend = [0,6].includes(new Date(r.date).getDay());
                     const isToday = r.date === new Date().toISOString().slice(0,10);
                     const gradeColor = r.grade === "A" ? "#16a34a" : r.grade === "B" ? "#2563eb" : r.grade === "C" ? "#f59e0b" : r.grade === "D" ? "#f97316" : r.grade === "E" ? "#ef4444" : r.grade === "F" ? "#94a3b8" : C.muted;
+                    const dailyComplete = Math.max(0, (r.demand || 0) - (r.fro || 0));
                     return (
                       <tr key={i} style={{ borderBottom: "1px solid #f1f5f9", background: isWeekend ? "#fafafa" : "#fff" }}>
                         <td style={{ padding: "9px 10px", fontWeight: isToday ? 800 : 500, color: isToday ? C.primary : isWeekend ? C.muted : C.text, whiteSpace: "nowrap" }}>
@@ -439,6 +442,9 @@ function Dashboard({ session, onLogout }) {
                         )}
                         <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 700 }}>{fmt(r.demand)}</td>
                         <td style={{ padding: "9px 10px", textAlign: "right", color: C.red, fontWeight: 700 }}>{r.fro > 0 ? fmt(r.fro) : "-"}</td>
+                        {type === "weekly" && (
+                          <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 700 }}>{fmt(dailyComplete)}</td>
+                        )}
                         <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 700, color: r.fro_rate > 0 ? C.red : C.muted }}>{r.fro_rate > 0 ? r.fro_rate.toFixed(2)+"%" : "-"}</td>
                         <td style={{ padding: "9px 10px", textAlign: "right", color: r.delay > 0 ? C.amber : C.muted }}>{r.delay > 0 ? fmt(r.delay) : "-"}</td>
                         <td style={{ padding: "9px 10px", textAlign: "right", color: r.delay_rate > 0 ? C.amber : C.muted }}>{r.delay_rate > 0 ? r.delay_rate.toFixed(2)+"%" : "-"}</td>
