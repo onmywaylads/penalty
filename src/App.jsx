@@ -127,13 +127,18 @@ function Dashboard({ session, onLogout }) {
   const daily = data?.daily || [];
   const recent = daily.slice(-14);
   const zone = data?.zone || "";
+  const type = data?.type || "fixed";
 
   // 서버에서 계산된 관리비 사용 (클라이언트 계산 X)
   const billing = data?.billing;
+  // fixed 타입용
   const MGMT_FEE = billing?.baseFee || 0;
   const monthCancel = billing?.totalFro || 0;
   const penalty = billing?.penalty || 0;
   const expectedFee = billing?.expected || 0;
+  // weekly 타입용
+  const weeks = billing?.weeks || [];
+  const weeklyTotal = billing?.totalExpected || 0;
 
   return (
     <div style={{ fontFamily: "'Pretendard','Apple SD Gothic Neo',sans-serif", background: C.bg, minHeight: "100vh" }}>
@@ -173,7 +178,7 @@ function Dashboard({ session, onLogout }) {
         )}
 
         {/* 1. 예상 관리비 (billing 있을 때만) */}
-        {billing && (
+        {billing && billing.type === "fixed" && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, marginBottom: 12 }}>💰 이번달 예상 관리비</div>
           <div style={{ background: expectedFee < MGMT_FEE * 0.7 ? "#fef2f2" : "#f0fdf4", borderRadius: 12, padding: "18px", textAlign: "center", border: `1px solid ${expectedFee < MGMT_FEE * 0.7 ? "#fecaca" : "#bbf7d0"}`, marginBottom: 12 }}>
@@ -198,6 +203,76 @@ function Dashboard({ session, onLogout }) {
             ※ 상품보상액은 실제 오더에 따라 변동될 수 있어 예상 패널티 금액이 달라질 수 있습니다. (현재 평균 30,000원 기준 산정)
           </div>
         </div>
+        )}
+
+        {/* 1-2. 예상 관리비 (weekly 타입 - 남동 등) */}
+        {billing && billing.type === "weekly" && (
+        <>
+          {/* 이번달 누적 */}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, marginBottom: 12 }}>💰 이번달 누적 관리비</div>
+            <div style={{ background: weeklyTotal < 0 ? "#fef2f2" : "#f0fdf4", borderRadius: 12, padding: "18px", textAlign: "center", border: `1px solid ${weeklyTotal < 0 ? "#fecaca" : "#bbf7d0"}` }}>
+              <div style={{ fontSize: 12, color: C.sub, fontWeight: 600, marginBottom: 6 }}>예상 수령 관리비</div>
+              <div style={{ fontSize: 36, fontWeight: 900, color: weeklyTotal < 0 ? C.red : C.green }}>{fmt(Math.round(weeklyTotal))}원</div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>주차별 합산</div>
+            </div>
+            <div style={{ marginTop: 10, fontSize: 11, color: C.muted, textAlign: "center", lineHeight: 1.6 }}>
+              ※ 진행중인 주차는 등급 미확정 시 F등급(0원)으로 임시 산정되며, 등급 확정 시 자동 반영됩니다.
+            </div>
+          </div>
+
+          {/* 주별 상세 */}
+          <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, marginBottom: 12 }}>📊 주별 상세</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {weeks.length === 0 && (
+                <div style={{ fontSize: 12, color: C.muted, textAlign: "center", padding: "20px" }}>데이터가 아직 없어요</div>
+              )}
+              {weeks.map((w, i) => {
+                const gradeColor = w.grade === "A" ? "#16a34a" : w.grade === "B" ? "#2563eb" : w.grade === "C" ? "#f59e0b" : w.grade === "D" ? "#f97316" : w.grade === "E" ? "#ef4444" : "#94a3b8";
+                const expColor = w.expected < 0 ? C.red : C.green;
+                return (
+                  <div key={i} style={{ border: `1px solid ${w.isThisWeek ? "#bfdbfe" : C.border}`, background: w.isThisWeek ? "#eff6ff" : "#fafafa", borderRadius: 12, padding: "12px 14px" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                        <span style={{ fontSize: 13, fontWeight: 800, color: C.text }}>{w.label}</span>
+                        <span style={{ fontSize: 10, color: C.muted }}>{w.start.slice(5)} ~ {w.end.slice(5)}</span>
+                        {w.isThisWeek && <span style={{ fontSize: 9, background: C.primary, color: "#fff", borderRadius: 4, padding: "1px 5px", fontWeight: 700 }}>진행중</span>}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                        {w.grade ? (
+                          <>
+                            <span style={{ fontSize: 13, fontWeight: 900, color: gradeColor, background: "#fff", borderRadius: 6, padding: "2px 8px", border: `1px solid ${gradeColor}` }}>{w.grade}</span>
+                            <span style={{ fontSize: 10, color: C.muted }}>{fmt(w.unitPrice)}원</span>
+                            {w.isProvisional && <span style={{ fontSize: 9, color: C.amber }}>임시</span>}
+                          </>
+                        ) : (
+                          <span style={{ fontSize: 10, color: C.muted }}>등급 미확정</span>
+                        )}
+                      </div>
+                    </div>
+                    <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 6, fontSize: 11 }}>
+                      <div style={{ background: "#fff", padding: "6px 8px", borderRadius: 6 }}>
+                        <span style={{ color: C.muted }}>관리비 </span>
+                        <span style={{ fontWeight: 700 }}>{fmt(w.complete)}건 × {fmt(w.unitPrice)} = </span>
+                        <span style={{ fontWeight: 800, color: C.primary }}>{fmt(w.managementFee)}원</span>
+                      </div>
+                      <div style={{ background: "#fff", padding: "6px 8px", borderRadius: 6 }}>
+                        <span style={{ color: C.muted }}>패널티 </span>
+                        <span style={{ fontWeight: 700 }}>{fmt(w.fro)}건 → </span>
+                        <span style={{ fontWeight: 800, color: C.red }}>-{fmt(Math.round(w.penalty))}원</span>
+                      </div>
+                    </div>
+                    <div style={{ marginTop: 8, textAlign: "right", fontSize: 13 }}>
+                      <span style={{ color: C.muted }}>수령액 </span>
+                      <span style={{ fontWeight: 900, color: expColor }}>{fmt(Math.round(w.expected))}원</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </>
         )}
 
         {/* 2. 실시간 현황 */}
@@ -243,8 +318,11 @@ function Dashboard({ session, onLogout }) {
               <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
-                    {["날짜", "접수", "보상건수", "보상비율", "배차지연(건)", "배차지연(%)"].map(h => (
-                      <th key={h} style={{ padding: "9px 10px", textAlign: h === "날짜" ? "left" : "right", color: C.sub, fontWeight: 700, fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h}</th>
+                    {(type === "weekly"
+                      ? ["날짜", "등급", "접수", "보상건수", "보상비율", "배차지연(건)", "배차지연(%)"]
+                      : ["날짜", "접수", "보상건수", "보상비율", "배차지연(건)", "배차지연(%)"]
+                    ).map(h => (
+                      <th key={h} style={{ padding: "9px 10px", textAlign: h === "날짜" ? "left" : "center", color: C.sub, fontWeight: 700, fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -253,12 +331,22 @@ function Dashboard({ session, onLogout }) {
                     const dow = ["일","월","화","수","목","금","토"][new Date(r.date).getDay()];
                     const isWeekend = [0,6].includes(new Date(r.date).getDay());
                     const isToday = r.date === new Date().toISOString().slice(0,10);
+                    const gradeColor = r.grade === "A" ? "#16a34a" : r.grade === "B" ? "#2563eb" : r.grade === "C" ? "#f59e0b" : r.grade === "D" ? "#f97316" : r.grade === "E" ? "#ef4444" : r.grade === "F" ? "#94a3b8" : C.muted;
                     return (
                       <tr key={i} style={{ borderBottom: "1px solid #f1f5f9", background: isWeekend ? "#fafafa" : "#fff" }}>
                         <td style={{ padding: "9px 10px", fontWeight: isToday ? 800 : 500, color: isToday ? C.primary : isWeekend ? C.muted : C.text, whiteSpace: "nowrap" }}>
                           {r.date.slice(5)} ({dow})
                           {isToday && <span style={{ fontSize: 9, background: "#eff6ff", color: C.primary, borderRadius: 4, padding: "1px 4px", marginLeft: 4 }}>오늘</span>}
                         </td>
+                        {type === "weekly" && (
+                          <td style={{ padding: "9px 10px", textAlign: "center" }}>
+                            {r.grade ? (
+                              <span style={{ fontSize: 11, fontWeight: 900, color: gradeColor, background: "#fff", borderRadius: 4, padding: "1px 6px", border: `1px solid ${gradeColor}` }}>{r.grade}</span>
+                            ) : (
+                              <span style={{ color: C.muted, fontSize: 11 }}>-</span>
+                            )}
+                          </td>
+                        )}
                         <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 700 }}>{fmt(r.demand)}</td>
                         <td style={{ padding: "9px 10px", textAlign: "right", color: C.red, fontWeight: 700 }}>{r.fro > 0 ? fmt(r.fro) : "-"}</td>
                         <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 700, color: r.fro_rate > 0 ? C.red : C.muted }}>{r.fro_rate > 0 ? r.fro_rate.toFixed(2)+"%" : "-"}</td>
