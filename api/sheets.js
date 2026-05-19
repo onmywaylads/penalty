@@ -192,7 +192,8 @@ export default async function handler(req, res) {
       const thisUnit = thisGrade ? (GRADE_PRICES[thisGrade] || 0) : 0;
 
       // 예상 = 지난주(월~일) 완료건수 × 이번주 등급 단가 - 이번주 누적 패널티
-      const lastWeekDaily = filteredDaily.filter(d => d.date >= fmtDate(lastWeekStart) && d.date <= fmtDate(lastWeekEnd));
+      // ※ 지난주는 시작일 이전이어도 시트에 있는 데이터 그대로 사용
+      const lastWeekDaily = daily.filter(d => d.date >= fmtDate(lastWeekStart) && d.date <= fmtDate(lastWeekEnd));
       const lastWeekComplete = sumComplete(lastWeekDaily);
       const thisWeekDaily = filteredDaily.filter(d => d.date >= fmtDate(thisWeekStart) && d.date <= fmtDate(thisWeekEnd));
       const thisWeekFro = thisWeekDaily.reduce((s, d) => s + (d.fro || 0), 0);
