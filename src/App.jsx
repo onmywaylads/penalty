@@ -148,7 +148,7 @@ function Dashboard({ session, onLogout }) {
         <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
             <div style={{ fontSize: 18, fontWeight: 800 }}>🚚 {zone}존 실적</div>
-            <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>요기배달 · 모아라인</div>
+            <div style={{ fontSize: 11, opacity: 0.8, marginTop: 2 }}>요기배달 · {type === "weekly" ? "바로고" : "모아라인"}</div>
           </div>
           <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
             <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
@@ -303,7 +303,7 @@ function Dashboard({ session, onLogout }) {
               <div style={{ fontSize: 22, fontWeight: 800, color: rt.delayCancelRate > 1 ? C.red : C.green }}>{rt.delayCancelRate.toFixed(2)}%</div>
             </div>
             <div style={{ marginTop: 10, textAlign: "center", fontSize: 11, color: C.muted }}>
-              3분마다 자동 갱신 · 요기배달 × 모아라인
+              3분마다 자동 갱신 · 요기배달 × {type === "weekly" ? "바로고" : "모아라인"}
             </div>
           </div>
         )}
