@@ -1,10 +1,9 @@
 // SLA Tracker 시트에서 zone의 Weekly/Daily 등급 가져오기
-// 서버 전용 - 클라이언트로 단가 등 노출되지 않음
+// 서버 전용
 
 const SLA_SHEET_ID = "1dGcKoEnVRFmpUqaDIN8DgKkR_TYKLijIJ6BKZy84IBQ";
 const SLA_SHEET_NAME = "SLA Tracker";
 
-// 시트 fetch (Google Sheets API)
 async function fetchSlaSheet(accessToken) {
   const range = encodeURIComponent(`${SLA_SHEET_NAME}!A1:AZ300`);
   const resp = await fetch(
@@ -15,7 +14,6 @@ async function fetchSlaSheet(accessToken) {
   return data.values || [];
 }
 
-// access_token 발급
 async function getAccessToken() {
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -32,11 +30,10 @@ async function getAccessToken() {
 }
 
 /**
- * Zone의 SLA 등급 정보 가져오기
- * @returns {
- *   weekly: { thisWeek: "A", lastWeek: "B", twoWeeksAgo: "C" } | null
- *   daily: { "2026-05-18": "E", "2026-05-17": "F", ... } | null
- * }
+ * Zone의 SLA 등급 가져오기
+ * 반환:
+ *   weekly: { thisWeek: {label, grade}, lastWeek: {...}, twoWeeksAgo: {...} } | null
+ *   daily: { "2026-05-18": "B", ... } | null
  */
 export async function getSlaGrades(zone) {
   try {
@@ -46,45 +43,42 @@ export async function getSlaGrades(zone) {
     const rows = await fetchSlaSheet(accessToken);
     if (!rows.length) return { weekly: null, daily: null };
 
-    // 헤더 row 찾기 (보통 row 7 = index 6, "W"로 시작하는 셀 3개 있는 row)
+    // 헤더 row 찾기 ("W숫자" 셀 3개 이상 있는 row)
     let headerIdx = -1;
-    let weeklyColIdxs = []; // [thisWeek, lastWeek, twoWeeksAgo] 컬럼 인덱스
-    let dailyCols = []; // [{idx, date(ISO)}, ...]
+    let weeklyColIdxs = [];
 
     for (let i = 0; i < Math.min(rows.length, 15); i++) {
       const row = rows[i] || [];
-      // "W21", "W20" 같은 셀 찾기
       const wCells = [];
       row.forEach((cell, idx) => {
         const txt = String(cell || "").trim();
         const m = txt.match(/^W(\d+)/);
-        if (m) wCells.push({ idx, week: parseInt(m[1]) });
+        if (m) wCells.push({ idx, week: parseInt(m[1]), text: txt });
       });
       if (wCells.length >= 3) {
-        // 주차 숫자 내림차순 정렬 → 가장 큰 게 이번주
+        // 주차 숫자 내림차순 → 가장 큰 게 이번주
         wCells.sort((a, b) => b.week - a.week);
-        weeklyColIdxs = [wCells[0].idx, wCells[1].idx, wCells[2].idx];
+        weeklyColIdxs = wCells.slice(0, 3).map(c => ({ idx: c.idx, label: `W${c.week}` }));
         headerIdx = i;
         break;
       }
     }
 
-    // Daily 등급 컬럼 찾기 (Q열 이후 "MM/DD (요일)" 형식)
-    if (headerIdx >= 0) {
-      const header = rows[headerIdx] || [];
-      const currentYear = new Date().getFullYear();
-      // weekly 컬럼 다음부터 검사
-      const startDailyCol = Math.max(...weeklyColIdxs) + 1;
-      for (let c = startDailyCol; c < header.length; c++) {
-        const txt = String(header[c] || "").trim();
-        // "05/18 (월)" 형식 매칭
-        const m = txt.match(/(\d{1,2})\/(\d{1,2})/);
-        if (m) {
-          const month = m[1].padStart(2, "0");
-          const day = m[2].padStart(2, "0");
-          const dateISO = `${currentYear}-${month}-${day}`;
-          dailyCols.push({ idx: c, date: dateISO });
-        }
+    if (headerIdx < 0) return { weekly: null, daily: null };
+
+    // Daily 등급 컬럼 찾기 (Q열 이후 "MM/DD" 형식)
+    const dailyCols = [];
+    const header = rows[headerIdx];
+    const currentYear = new Date().getFullYear();
+    const startDailyCol = Math.max(...weeklyColIdxs.map(c => c.idx)) + 1;
+    for (let c = startDailyCol; c < header.length; c++) {
+      const txt = String(header[c] || "").trim();
+      const m = txt.match(/(\d{1,2})\/(\d{1,2})/);
+      if (m) {
+        const month = m[1].padStart(2, "0");
+        const day = m[2].padStart(2, "0");
+        const dateISO = `${currentYear}-${month}-${day}`;
+        dailyCols.push({ idx: c, date: dateISO });
       }
     }
 
@@ -102,14 +96,23 @@ export async function getSlaGrades(zone) {
 
     if (!zoneRow) return { weekly: null, daily: null };
 
-    // Weekly 등급 추출
-    const weekly = weeklyColIdxs.length === 3 ? {
-      thisWeek: normalizeGrade(zoneRow[weeklyColIdxs[0]]),
-      lastWeek: normalizeGrade(zoneRow[weeklyColIdxs[1]]),
-      twoWeeksAgo: normalizeGrade(zoneRow[weeklyColIdxs[2]]),
-    } : null;
+    // Weekly 등급
+    const weekly = {
+      thisWeek: {
+        label: weeklyColIdxs[0].label,
+        grade: normalizeGrade(zoneRow[weeklyColIdxs[0].idx]),
+      },
+      lastWeek: {
+        label: weeklyColIdxs[1].label,
+        grade: normalizeGrade(zoneRow[weeklyColIdxs[1].idx]),
+      },
+      twoWeeksAgo: {
+        label: weeklyColIdxs[2].label,
+        grade: normalizeGrade(zoneRow[weeklyColIdxs[2].idx]),
+      },
+    };
 
-    // Daily 등급 추출 (date -> grade map)
+    // Daily 등급
     const daily = {};
     dailyCols.forEach(({ idx, date }) => {
       const g = normalizeGrade(zoneRow[idx]);
