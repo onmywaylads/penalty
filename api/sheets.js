@@ -11,20 +11,15 @@ export default async function handler(req, res) {
   const authHeader = req.headers.authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
   const payload = verify(token);
-  if (!payload) {
-    return res.status(401).json({ error: "인증이 필요해요" });
-  }
+  if (!payload) return res.status(401).json({ error: "인증이 필요해요" });
   const account = getAccountByUsername(payload.u);
-  if (!account) {
-    return res.status(401).json({ error: "유효하지 않은 계정" });
-  }
+  if (!account) return res.status(401).json({ error: "유효하지 않은 계정" });
 
-  // 서버에서 zone 결정
   const ZONE = account.zone;
   const SPREADSHEET_ID = "1c_43XVjrufy0cEoOA5eBlx49h6u4RoYjm-g02iOztCQ";
 
   try {
-    // 1. access_token 발급
+    // access_token 발급
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -36,9 +31,7 @@ export default async function handler(req, res) {
       }),
     });
     const tokenData = await tokenRes.json();
-    if (!tokenData.access_token) {
-      return res.status(500).json({ error: "토큰 발급 실패" });
-    }
+    if (!tokenData.access_token) return res.status(500).json({ error: "토큰 발급 실패" });
     const accessToken = tokenData.access_token;
 
     const fetchSheet = async (sheetName, range) => {
@@ -51,20 +44,15 @@ export default async function handler(req, res) {
       return data.values || [];
     };
 
-    // ── 시트1: 바로고 운영 대시보드 ──────────────────────────────
+    // ── 실시간 현황 ───────────────────────────────────────────
     const dashRows = await fetchSheet("바로고 운영 대시보드", "A1:Z300");
-
     let dashHeaderIdx = -1;
     for (let i = 0; i < Math.min(dashRows.length, 20); i++) {
       const r = dashRows[i] || [];
       const cityCol = r.findIndex(h => h === "도시" || h === "city");
       const zoneCol = r.findIndex(h => h === "존" || h === "zone" || h === "zone_nm");
-      if (cityCol >= 0 && zoneCol >= 0) {
-        dashHeaderIdx = i;
-        break;
-      }
+      if (cityCol >= 0 && zoneCol >= 0) { dashHeaderIdx = i; break; }
     }
-
     let realtime = null;
     if (dashHeaderIdx >= 0) {
       const headers = dashRows[dashHeaderIdx];
@@ -100,16 +88,12 @@ export default async function handler(req, res) {
       }
     }
 
-    // ── 시트2: 일별 FRO ──────────────────────────────────────────
+    // ── 일별 FRO ────────────────────────────────────────────
     const froRows = await fetchSheet("일별 FRO", "A1:DZ300");
-
     let colRowIdx = -1;
     for (let i = 0; i < Math.min(froRows.length, 5); i++) {
       const row = froRows[i] || [];
-      if (row[0] === "city_nm" && row[1] === "zone_nm") {
-        colRowIdx = i;
-        break;
-      }
+      if (row[0] === "city_nm" && row[1] === "zone_nm") { colRowIdx = i; break; }
     }
 
     let daily = [];
@@ -117,15 +101,12 @@ export default async function handler(req, res) {
       const dateRow = froRows[colRowIdx - 1] || [];
       const currentYear = new Date().getFullYear();
       const dateGroups = [];
-
       for (let i = 3; i < dateRow.length; i += 5) {
         const rawDate = String(dateRow[i] ?? "").trim();
         if (!rawDate) continue;
         let dateISO = null;
         const kMatch = rawDate.match(/(\d{1,2})월\s*(\d{1,2})일/);
-        if (kMatch) {
-          dateISO = `${currentYear}-${kMatch[1].padStart(2,"0")}-${kMatch[2].padStart(2,"0")}`;
-        }
+        if (kMatch) dateISO = `${currentYear}-${kMatch[1].padStart(2,"0")}-${kMatch[2].padStart(2,"0")}`;
         if (!dateISO) {
           const sMatch = rawDate.match(/^(\d{5})/);
           if (sMatch) {
@@ -150,7 +131,6 @@ export default async function handler(req, res) {
         const zoneNm = String(row[1] ?? "").trim();
         if (zoneNm !== ZONE) continue;
         if (zoneNm === "합계") continue;
-
         for (const g of dateGroups) {
           const demand = Number(String(row[g.demandIdx] ?? "0").replace(/[^0-9.-]/g, "")) || 0;
           const fro = Number(String(row[g.froIdx] ?? "0").replace(/[^0-9.-]/g, "")) || 0;
@@ -165,95 +145,118 @@ export default async function handler(req, res) {
       daily.sort((a, b) => a.date.localeCompare(b.date));
     }
 
-    // 시작일 필터
     const startDate = account.startDate || "2000-01-01";
     const filteredDaily = daily.filter(d => d.date >= startDate);
 
-    // ── 정산 계산 ────────────────────────────────────────────
+    // ── 정산 ─────────────────────────────────────────────────
     let billing = null;
+    let sla = null;
     let dailyWithGrade = filteredDaily;
 
     if (account.type === "fixed") {
-      // 고정 관리비 (파주)
+      // 파주: 고정 관리비
       const totalFro = filteredDaily.reduce((s, d) => s + (d.fro || 0), 0);
       const penalty = totalFro * 30000 * 0.3;
       const expected = account.fee - penalty;
-      billing = {
-        type: "fixed",
-        baseFee: account.fee,
-        totalFro,
-        penalty,
-        expected,
-      };
+      billing = { type: "fixed", baseFee: account.fee, totalFro, penalty, expected };
     } else if (account.type === "weekly") {
-      // 건당 관리비 - SLA 등급 가져와서 주별 계산
-      const sla = await getSlaGrades(ZONE);
-      const weeklyGrades = sla.weekly || {};
-      const dailyGrades = sla.daily || {};
+      // 남동 등: 건당 관리비
+      sla = await getSlaGrades(ZONE);
+      const weeklyGrades = sla?.weekly || null;
+      const dailyGrades = sla?.daily || {};
 
       // 일별에 Daily 등급 매핑
-      dailyWithGrade = filteredDaily.map(d => ({
-        ...d,
-        grade: dailyGrades[d.date] || null,
-      }));
+      dailyWithGrade = filteredDaily.map(d => ({ ...d, grade: dailyGrades[d.date] || null }));
 
-      // 주별 구간 생성
+      // 이번주 / 지난주 구간 (월~일)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const thisWeekStart = mondayOf(today);
+      const thisWeekEnd = sundayOf(today);
+      const lastWeekStart = new Date(thisWeekStart); lastWeekStart.setDate(lastWeekStart.getDate() - 7);
+      const lastWeekEnd = new Date(thisWeekEnd); lastWeekEnd.setDate(lastWeekEnd.getDate() - 7);
+
+      // SLA 시트의 W21/W20/W19에 날짜 매핑 (시트 라벨 + 추정 기간)
+      const slaWeekly = weeklyGrades ? [
+        { ...weeklyGrades.thisWeek, start: fmtDate(thisWeekStart), end: fmtDate(thisWeekEnd), isCurrent: true },
+        { ...weeklyGrades.lastWeek, start: fmtDate(lastWeekStart), end: fmtDate(lastWeekEnd), isCurrent: false },
+        (() => {
+          const s = new Date(lastWeekStart); s.setDate(s.getDate() - 7);
+          const e = new Date(lastWeekEnd); e.setDate(e.getDate() - 7);
+          return { ...weeklyGrades.twoWeeksAgo, start: fmtDate(s), end: fmtDate(e), isCurrent: false };
+        })(),
+      ] : null;
+
+      // 이번주 등급 (=현재 단가 기준)
+      const thisGrade = weeklyGrades?.thisWeek?.grade || null;
+      const thisUnit = thisGrade ? (GRADE_PRICES[thisGrade] || 0) : 0;
+
+      // 예상 = 지난주(월~일) 완료건수 × 이번주 등급 단가 - 이번주 누적 패널티
+      const lastWeekDaily = filteredDaily.filter(d => d.date >= fmtDate(lastWeekStart) && d.date <= fmtDate(lastWeekEnd));
+      const lastWeekComplete = sumComplete(lastWeekDaily);
+      const thisWeekDaily = filteredDaily.filter(d => d.date >= fmtDate(thisWeekStart) && d.date <= fmtDate(thisWeekEnd));
+      const thisWeekFro = thisWeekDaily.reduce((s, d) => s + (d.fro || 0), 0);
+      const thisWeekPenalty = thisWeekFro * 30000 * 0.3;
+
+      const estimate = {
+        count: lastWeekComplete,
+        grade: thisGrade,
+        unitPrice: thisUnit,
+        management: lastWeekComplete * thisUnit,
+        penalty: thisWeekPenalty,
+        amount: lastWeekComplete * thisUnit - thisWeekPenalty,
+      };
+
+      // 실제 = 이번주 누적 완료건수 × 이번주 등급 단가 - 이번주 누적 패널티
+      const thisWeekComplete = sumComplete(thisWeekDaily);
+      const actual = {
+        count: thisWeekComplete,
+        grade: thisGrade,
+        unitPrice: thisUnit,
+        management: thisWeekComplete * thisUnit,
+        penalty: thisWeekPenalty,
+        amount: thisWeekComplete * thisUnit - thisWeekPenalty,
+      };
+
+      // 주별 상세 (시작일부터)
       const weeks = buildWeeks(account.startDate);
-      const today = new Date().toISOString().slice(0, 10);
-
-      // 오늘까지의 주만
-      const validWeeks = weeks.filter(w => w.start <= today);
-      const lastIdx = validWeeks.length - 1; // 진행중인 주의 index
+      const todayStr = fmtDate(today);
+      const validWeeks = weeks.filter(w => w.start <= todayStr);
+      const lastIdx = validWeeks.length - 1;
 
       const weeksData = validWeeks.map((w, idx) => {
         const inRange = filteredDaily.filter(d => d.date >= w.start && d.date <= w.end);
-        // 완료건수: 일별 FRO 시트엔 직접적 "완료" 컬럼이 없어 demand 사용
-        // demand - fro - delay 가 진짜 완료에 가까움
-        const complete = inRange.reduce((s, d) => s + Math.max(0, (d.demand || 0) - (d.fro || 0) - (d.delay || 0)), 0);
+        const complete = sumComplete(inRange);
         const fro = inRange.reduce((s, d) => s + (d.fro || 0), 0);
-
-        // 등급 결정
         const reverseIdx = lastIdx - idx; // 0=이번주, 1=지난주, 2=2주전
-        const isThisWeek = reverseIdx === 0;
         let grade = null;
-        let isProvisional = false;
-
-        if (isThisWeek) {
-          grade = weeklyGrades.thisWeek || null;
-          if (!grade) { grade = "F"; isProvisional = true; }
-        } else if (reverseIdx === 1) {
-          grade = weeklyGrades.lastWeek || null;
-        } else if (reverseIdx === 2) {
-          grade = weeklyGrades.twoWeeksAgo || null;
-        }
-
+        if (reverseIdx === 0) grade = weeklyGrades?.thisWeek?.grade || null;
+        else if (reverseIdx === 1) grade = weeklyGrades?.lastWeek?.grade || null;
+        else if (reverseIdx === 2) grade = weeklyGrades?.twoWeeksAgo?.grade || null;
         const unitPrice = grade ? (GRADE_PRICES[grade] || 0) : 0;
-        const managementFee = complete * unitPrice;
+        const management = complete * unitPrice;
         const penalty = fro * 30000 * 0.3;
-        const expected = managementFee - penalty; // F등급 + 패널티 있으면 마이너스 가능
-
         return {
           label: `${idx + 1}주차`,
           start: w.start,
           end: w.end,
-          isThisWeek,
           grade,
-          isProvisional,
           unitPrice,
           complete,
           fro,
-          managementFee,
+          management,
           penalty,
-          expected,
+          amount: management - penalty,
         };
       });
 
-      const totalExpected = weeksData.reduce((s, w) => s + w.expected, 0);
-
       billing = {
         type: "weekly",
+        estimate,
+        actual,
         weeks: weeksData,
-        totalExpected,
+        slaWeekly,        // [{ label: "W21", grade: "B", start, end, isCurrent }, ...]
+        startDate: account.startDate,
       };
     }
 
@@ -269,24 +272,24 @@ export default async function handler(req, res) {
   }
 }
 
-// 시작일부터 오늘까지의 주별 구간 만들기
-// 첫 주: startDate ~ 그 주의 일요일
-// 둘째 주부터: 월~일
+// 완료건수 추정: demand - fro - delay (일별 FRO 시트엔 직접 완료 컬럼이 없음)
+function sumComplete(arr) {
+  return arr.reduce((s, d) => s + Math.max(0, (d.demand || 0) - (d.fro || 0) - (d.delay || 0)), 0);
+}
+
+// 시작일부터 주 단위로 나누기 (첫 주만 짧을 수 있고, 둘째 주부터 월~일)
 function buildWeeks(startDateStr) {
   const weeks = [];
   const start = new Date(startDateStr + "T00:00:00");
   const today = new Date();
   today.setHours(23, 59, 59, 999);
 
-  // 첫 주
-  const firstDay = start.getDay(); // 0=일, 1=월
+  const firstDay = start.getDay();
   const daysToSunday = firstDay === 0 ? 0 : 7 - firstDay;
   const firstWeekEnd = new Date(start);
   firstWeekEnd.setDate(start.getDate() + daysToSunday);
-
   weeks.push({ start: fmtDate(start), end: fmtDate(firstWeekEnd) });
 
-  // 다음주부터 월~일
   let cursor = new Date(firstWeekEnd);
   cursor.setDate(cursor.getDate() + 1);
   while (cursor <= today) {
@@ -296,8 +299,21 @@ function buildWeeks(startDateStr) {
     weeks.push({ start: fmtDate(weekStart), end: fmtDate(weekEnd) });
     cursor.setDate(cursor.getDate() + 7);
   }
-
   return weeks;
+}
+
+function mondayOf(d) {
+  const dd = new Date(d);
+  const day = dd.getDay(); // 0=일, 1=월
+  const diff = day === 0 ? -6 : 1 - day;
+  dd.setDate(dd.getDate() + diff);
+  dd.setHours(0, 0, 0, 0);
+  return dd;
+}
+function sundayOf(d) {
+  const m = mondayOf(d);
+  m.setDate(m.getDate() + 6);
+  return m;
 }
 
 function fmtDate(d) {
