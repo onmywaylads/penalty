@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from "react";
 
 // 관리비/패널티 단가는 서버에서 계산 (클라이언트 노출 X)
 // 등급 단가는 SLA 카드에 표시용으로만 사용 (실제 계산은 서버)
-const GRADE_PRICES_DISPLAY = { A: 500, B: 400, C: 300, D: 200, E: 100, F: 0 };
+const GRADE_PRICES_DISPLAY = { A: 600, B: 500, C: 450, D: 400, E: 350, F: 300 };
 function GRADE_PRICE_FOR_DISPLAY(g) { return GRADE_PRICES_DISPLAY[g] || 0; }
 
 function SubItem({ label, val, color }) {
