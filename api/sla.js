@@ -72,10 +72,11 @@ export async function getSlaGrades(zone) {
     const header = rows[headerIdx];
     const currentYear = new Date().getFullYear();
 
-    // Weekly 컬럼 중 가장 오른쪽 idx 이후부터 날짜 찾기
+    // R열(index 17)부터 날짜 찾기 - Q열은 서비스퀄리티 현황이라 스킵
     const lastWeeklyIdx = Math.max(...weeklyColIdxs.map(c => c.idx));
+    const dailyStartCol = Math.max(lastWeeklyIdx + 2, 17); // Q열(17) 이후부터
 
-    for (let c = lastWeeklyIdx + 1; c < header.length; c++) {
+    for (let c = dailyStartCol; c < header.length; c++) {
       const txt = String(header[c] || "").trim();
       // "05/20 (수)" 또는 "05/20" 형식
       const m = txt.match(/^(\d{1,2})\/(\d{1,2})/);
