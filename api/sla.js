@@ -43,20 +43,21 @@ export async function getSlaGrades(zone) {
     const rows = await fetchSlaSheet(accessToken);
     if (!rows.length) return { weekly: null, daily: null };
 
-    // 헤더 row 찾기 ("W숫자" 셀 3개 이상 있는 row)
+    // 헤더 row 찾기 - "W21" 또는 "W숫자" 패턴이 있는 행
+    // 시트 구조: 8행에 "W21", "W20", "W19" + "05/20 (수)" 등 날짜 헤더
     let headerIdx = -1;
-    let weeklyColIdxs = [];
+    let weeklyColIdxs = []; // [{idx, label}] 최신 3주
 
     for (let i = 0; i < Math.min(rows.length, 15); i++) {
       const row = rows[i] || [];
       const wCells = [];
       row.forEach((cell, idx) => {
         const txt = String(cell || "").trim();
+        // "W21 (월~수)" 또는 "W21" 형식 매칭
         const m = txt.match(/^W(\d+)/);
         if (m) wCells.push({ idx, week: parseInt(m[1]), text: txt });
       });
-      if (wCells.length >= 3) {
-        // 주차 숫자 내림차순 → 가장 큰 게 이번주
+      if (wCells.length >= 2) {
         wCells.sort((a, b) => b.week - a.week);
         weeklyColIdxs = wCells.slice(0, 3).map(c => ({ idx: c.idx, label: `W${c.week}` }));
         headerIdx = i;
@@ -66,14 +67,18 @@ export async function getSlaGrades(zone) {
 
     if (headerIdx < 0) return { weekly: null, daily: null };
 
-    // Daily 등급 컬럼 찾기 (Q열 이후 "MM/DD" 형식)
+    // Daily 등급 컬럼 찾기 - 같은 헤더 row에서 "MM/DD" 형식 찾기
     const dailyCols = [];
     const header = rows[headerIdx];
     const currentYear = new Date().getFullYear();
-    const startDailyCol = Math.max(...weeklyColIdxs.map(c => c.idx)) + 1;
-    for (let c = startDailyCol; c < header.length; c++) {
+
+    // Weekly 컬럼 중 가장 오른쪽 idx 이후부터 날짜 찾기
+    const lastWeeklyIdx = Math.max(...weeklyColIdxs.map(c => c.idx));
+
+    for (let c = lastWeeklyIdx + 1; c < header.length; c++) {
       const txt = String(header[c] || "").trim();
-      const m = txt.match(/(\d{1,2})\/(\d{1,2})/);
+      // "05/20 (수)" 또는 "05/20" 형식
+      const m = txt.match(/^(\d{1,2})\/(\d{1,2})/);
       if (m) {
         const month = m[1].padStart(2, "0");
         const day = m[2].padStart(2, "0");
@@ -82,7 +87,7 @@ export async function getSlaGrades(zone) {
       }
     }
 
-    // Zone row 찾기 (E열 = index 4)
+    // Zone row 찾기 (E열 = index 4, "구분 3" = Zone 이름)
     const ZONE_COL = 4;
     let zoneRow = null;
     for (let i = headerIdx + 1; i < rows.length; i++) {
@@ -94,21 +99,24 @@ export async function getSlaGrades(zone) {
       }
     }
 
-    if (!zoneRow) return { weekly: null, daily: null };
+    if (!zoneRow) {
+      console.error(`SLA: zone "${zone}" not found in sheet`);
+      return { weekly: null, daily: null };
+    }
 
-    // Weekly 등급
+    // Weekly 등급 (W21=이번주, W20=지난주, W19=2주전)
     const weekly = {
       thisWeek: {
-        label: weeklyColIdxs[0].label,
-        grade: normalizeGrade(zoneRow[weeklyColIdxs[0].idx]),
+        label: weeklyColIdxs[0]?.label || "W-",
+        grade: normalizeGrade(zoneRow[weeklyColIdxs[0]?.idx]),
       },
       lastWeek: {
-        label: weeklyColIdxs[1].label,
-        grade: normalizeGrade(zoneRow[weeklyColIdxs[1].idx]),
+        label: weeklyColIdxs[1]?.label || "W-",
+        grade: normalizeGrade(zoneRow[weeklyColIdxs[1]?.idx]),
       },
       twoWeeksAgo: {
-        label: weeklyColIdxs[2].label,
-        grade: normalizeGrade(zoneRow[weeklyColIdxs[2].idx]),
+        label: weeklyColIdxs[2]?.label || "W-",
+        grade: normalizeGrade(zoneRow[weeklyColIdxs[2]?.idx]),
       },
     };
 
@@ -118,6 +126,8 @@ export async function getSlaGrades(zone) {
       const g = normalizeGrade(zoneRow[idx]);
       if (g) daily[date] = g;
     });
+
+    console.log(`SLA zones found - weekly: ${JSON.stringify(weekly)}, daily dates: ${Object.keys(daily).join(", ")}`);
 
     return { weekly, daily };
   } catch (e) {
