@@ -1,11 +1,8 @@
-// SLA Tracker 시트에서 zone의 Weekly/Daily 등급 가져오기
-// 서버 전용
-
 const SLA_SHEET_ID = "1dGcKoEnVRFmpUqaDIN8DgKkR_TYKLijIJ6BKZy84IBQ";
 const SLA_SHEET_NAME = "SLA Tracker";
 
 async function fetchSlaSheet(accessToken) {
-  const range = encodeURIComponent(`${SLA_SHEET_NAME}!A1:AZ300`);
+  const range = encodeURIComponent(`${SLA_SHEET_NAME}!A1:BZ300`);
   const resp = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${SLA_SHEET_ID}/values/${range}`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -29,12 +26,6 @@ async function getAccessToken() {
   return tokenData.access_token;
 }
 
-/**
- * Zone의 SLA 등급 가져오기
- * 반환:
- *   weekly: { thisWeek: {label, grade}, lastWeek: {...}, twoWeeksAgo: {...} } | null
- *   daily: { "2026-05-18": "B", ... } | null
- */
 export async function getSlaGrades(zone) {
   try {
     const accessToken = await getAccessToken();
@@ -43,17 +34,14 @@ export async function getSlaGrades(zone) {
     const rows = await fetchSlaSheet(accessToken);
     if (!rows.length) return { weekly: null, daily: null };
 
-    // 헤더 row 찾기 - "W21" 또는 "W숫자" 패턴이 있는 행
-    // 시트 구조: 8행에 "W21", "W20", "W19" + "05/20 (수)" 등 날짜 헤더
     let headerIdx = -1;
-    let weeklyColIdxs = []; // [{idx, label}] 최신 3주
+    let weeklyColIdxs = [];
 
     for (let i = 0; i < Math.min(rows.length, 15); i++) {
       const row = rows[i] || [];
       const wCells = [];
       row.forEach((cell, idx) => {
         const txt = String(cell || "").trim();
-        // "W21 (월~수)" 또는 "W21" 형식 매칭
         const m = txt.match(/^W(\d+)/);
         if (m) wCells.push({ idx, week: parseInt(m[1]), text: txt });
       });
@@ -65,20 +53,29 @@ export async function getSlaGrades(zone) {
       }
     }
 
-    if (headerIdx < 0) return { weekly: null, daily: null };
+    if (headerIdx < 0) {
+      console.error("SLA: headerIdx not found");
+      return { weekly: null, daily: null };
+    }
 
-    // Daily 등급 컬럼 찾기 - 같은 헤더 row에서 "MM/DD" 형식 찾기
-    const dailyCols = [];
     const header = rows[headerIdx];
     const currentYear = new Date().getFullYear();
 
-    // R열(index 17)부터 날짜 찾기 - Q열은 서비스퀄리티 현황이라 스킵
-    const lastWeeklyIdx = Math.max(...weeklyColIdxs.map(c => c.idx));
-    const dailyStartCol = Math.max(lastWeeklyIdx + 2, 17); // Q열(17) 이후부터
+    // 디버그: 헤더 전체 출력
+    console.log("SLA headerIdx:", headerIdx);
+    console.log("SLA weeklyColIdxs:", JSON.stringify(weeklyColIdxs));
+    console.log("SLA header length:", header.length);
+    console.log("SLA header[13~30]:", JSON.stringify(header.slice(13, 30)));
 
+    const lastWeeklyIdx = Math.max(...weeklyColIdxs.map(c => c.idx));
+    const dailyStartCol = lastWeeklyIdx + 2; // 서비스퀄리티 컬럼 스킵
+
+    console.log("SLA dailyStartCol:", dailyStartCol);
+    console.log("SLA header from dailyStartCol:", JSON.stringify(header.slice(dailyStartCol, dailyStartCol + 10)));
+
+    const dailyCols = [];
     for (let c = dailyStartCol; c < header.length; c++) {
       const txt = String(header[c] || "").trim();
-      // "05/20 (수)" 또는 "05/20" 형식
       const m = txt.match(/^(\d{1,2})\/(\d{1,2})/);
       if (m) {
         const month = m[1].padStart(2, "0");
@@ -88,7 +85,8 @@ export async function getSlaGrades(zone) {
       }
     }
 
-    // Zone row 찾기 (E열 = index 4, "구분 3" = Zone 이름)
+    console.log("SLA dailyCols count:", dailyCols.length, "dates:", dailyCols.map(d => d.date).join(", "));
+
     const ZONE_COL = 4;
     let zoneRow = null;
     for (let i = headerIdx + 1; i < rows.length; i++) {
@@ -101,34 +99,24 @@ export async function getSlaGrades(zone) {
     }
 
     if (!zoneRow) {
-      console.error(`SLA: zone "${zone}" not found in sheet`);
+      console.error(`SLA: zone "${zone}" not found`);
       return { weekly: null, daily: null };
     }
 
-    // Weekly 등급 (W21=이번주, W20=지난주, W19=2주전)
     const weekly = {
-      thisWeek: {
-        label: weeklyColIdxs[0]?.label || "W-",
-        grade: normalizeGrade(zoneRow[weeklyColIdxs[0]?.idx]),
-      },
-      lastWeek: {
-        label: weeklyColIdxs[1]?.label || "W-",
-        grade: normalizeGrade(zoneRow[weeklyColIdxs[1]?.idx]),
-      },
-      twoWeeksAgo: {
-        label: weeklyColIdxs[2]?.label || "W-",
-        grade: normalizeGrade(zoneRow[weeklyColIdxs[2]?.idx]),
-      },
+      thisWeek: { label: weeklyColIdxs[0]?.label || "W-", grade: normalizeGrade(zoneRow[weeklyColIdxs[0]?.idx]) },
+      lastWeek: { label: weeklyColIdxs[1]?.label || "W-", grade: normalizeGrade(zoneRow[weeklyColIdxs[1]?.idx]) },
+      twoWeeksAgo: { label: weeklyColIdxs[2]?.label || "W-", grade: normalizeGrade(zoneRow[weeklyColIdxs[2]?.idx]) },
     };
 
-    // Daily 등급
     const daily = {};
     dailyCols.forEach(({ idx, date }) => {
       const g = normalizeGrade(zoneRow[idx]);
       if (g) daily[date] = g;
     });
 
-    console.log(`SLA zones found - weekly: ${JSON.stringify(weekly)}, daily dates: ${Object.keys(daily).join(", ")}`);
+    console.log("SLA weekly:", JSON.stringify(weekly));
+    console.log("SLA daily:", JSON.stringify(daily));
 
     return { weekly, daily };
   } catch (e) {
