@@ -152,6 +152,11 @@ export default async function handler(req, res) {
     let dailyWithGrade = filteredDaily;
 
     if (account.type === "fixed") {
+      // SLA daily 등급 가져오기 (일별 테이블 표시용)
+      const slaPaju = await getSlaGrades(ZONE);
+      const dailyGrades = slaPaju?.daily || {};
+      dailyWithGrade = filteredDaily.map(d => ({ ...d, grade: dailyGrades[d.date] || null }));
+
       const totalFro = filteredDaily.reduce((s, d) => s + (d.fro || 0), 0);
       const penalty = totalFro * 30000 * 0.3;
       const expected = account.fee - penalty;
@@ -160,11 +165,6 @@ export default async function handler(req, res) {
       sla = await getSlaGrades(ZONE);
       const weeklyGrades = sla?.weekly || null;
       const dailyGrades = sla?.daily || {};
-
-      // 디버그 로그
-      console.log("ZONE:", ZONE);
-      console.log("dailyGrades:", JSON.stringify(dailyGrades));
-      console.log("filteredDaily dates:", filteredDaily.map(d => d.date));
 
       dailyWithGrade = filteredDaily.map(d => ({ ...d, grade: dailyGrades[d.date] || null }));
 
