@@ -1,7 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 
-// 관리비/패널티 단가는 서버에서 계산 (클라이언트 노출 X)
-// 등급 단가는 SLA 카드에 표시용으로만 사용 (실제 계산은 서버)
 const GRADE_PRICES_DISPLAY = { A: 600, B: 500, C: 450, D: 400, E: 350, F: 300 };
 function GRADE_PRICE_FOR_DISPLAY(g) { return GRADE_PRICES_DISPLAY[g] || 0; }
 
@@ -48,7 +46,6 @@ function LoginView({ onLogin }) {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "로그인 실패");
-      // 응답엔 token만 있음 (zone/fee는 서버에서 토큰으로 조회)
       const session = { token: data.token, id };
       sessionStorage.setItem("hub_session", JSON.stringify(session));
       onLogin(session);
@@ -111,7 +108,6 @@ function Dashboard({ session, onLogout }) {
       });
       const json = await res.json();
       if (json.error) {
-        // 토큰 만료/무효면 로그아웃
         if (res.status === 401) {
           sessionStorage.removeItem("hub_session");
           onLogout();
@@ -135,7 +131,6 @@ function Dashboard({ session, onLogout }) {
     return () => clearInterval(t);
   }, [load]);
 
-  // 탭 제목 고정
   useEffect(() => {
     document.title = "B2B 현황 대시보드";
   }, []);
@@ -146,14 +141,11 @@ function Dashboard({ session, onLogout }) {
   const zone = data?.zone || "";
   const type = data?.type || "fixed";
 
-  // 서버에서 계산된 관리비 사용 (클라이언트 계산 X)
   const billing = data?.billing;
-  // fixed 타입용
   const MGMT_FEE = billing?.baseFee || 0;
   const monthCancel = billing?.totalFro || 0;
   const penalty = billing?.penalty || 0;
   const expectedFee = billing?.expected || 0;
-  // weekly 타입용
   const estimate = billing?.estimate || null;
   const actual = billing?.actual || null;
   const weeks = billing?.weeks || [];
@@ -197,7 +189,7 @@ function Dashboard({ session, onLogout }) {
           </div>
         )}
 
-        {/* 1. 예상 관리비 (billing 있을 때만) */}
+        {/* 1. 예상 관리비 fixed */}
         {billing && billing.type === "fixed" && (
         <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, marginBottom: 12 }}>💰 이번달 예상 관리비</div>
@@ -225,10 +217,9 @@ function Dashboard({ session, onLogout }) {
         </div>
         )}
 
-        {/* 1-2. 예상 관리비 (weekly 타입 - 남동 등) */}
+        {/* 1-2. 예상 관리비 weekly */}
         {billing && billing.type === "weekly" && (
         <>
-          {/* SLA 등급 (최근 3주) */}
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, marginBottom: 12 }}>🏆 SLA 등급 (최근 3주)</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
@@ -274,12 +265,10 @@ function Dashboard({ session, onLogout }) {
             )}
           </div>
 
-          {/* 이번주 관리비 (예상 vs 실제) */}
           {(estimate || actual) && (
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, padding: "16px", marginBottom: 14, boxShadow: "0 1px 4px rgba(0,0,0,0.06)" }}>
             <div style={{ fontSize: 13, fontWeight: 700, color: C.sub, marginBottom: 12 }}>💰 이번주 관리비</div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }} className="mgmt-grid-responsive">
-              {/* 예상 */}
               {estimate && (
               <div style={{ borderRadius: 12, padding: 14, border: "1px solid #fde68a", background: "linear-gradient(135deg, #fefce8 0%, #fff 100%)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
@@ -296,8 +285,6 @@ function Dashboard({ session, onLogout }) {
                 </div>
               </div>
               )}
-
-              {/* 실제 */}
               {actual && (
               <div style={{ borderRadius: 12, padding: 14, border: "1px solid #bbf7d0", background: "linear-gradient(135deg, #f0fdf4 0%, #fff 100%)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 4 }}>
@@ -346,7 +333,6 @@ function Dashboard({ session, onLogout }) {
                 </div>
               ))}
             </div>
-            {/* 배차지연취소율 */}
             <div style={{ marginTop: 10, background: "#fef2f2", borderRadius: 10, padding: "12px", textAlign: "center" }}>
               <div style={{ fontSize: 10, color: C.muted, fontWeight: 600, marginBottom: 4 }}>배차지연취소율</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: rt.delayCancelRate > 1 ? C.red : C.green }}>{rt.delayCancelRate.toFixed(2)}%</div>
@@ -401,7 +387,7 @@ function Dashboard({ session, onLogout }) {
           </div>
         )}
 
-        {/* 3. 일별 FRO */}
+        {/* 3. 일별 FRO - 등급 컬럼 fixed/weekly 모두 표시 */}
         {recent.length > 0 && (
           <div style={{ background: C.card, border: `1px solid ${C.border}`, borderRadius: 14, overflow: "hidden", boxShadow: "0 1px 4px rgba(0,0,0,0.06)", marginBottom: 14 }}>
             <div style={{ padding: "12px 16px", borderBottom: `1px solid ${C.border}`, background: "#f8fafc", fontSize: 13, fontWeight: 700, color: C.text }}>
@@ -413,7 +399,7 @@ function Dashboard({ session, onLogout }) {
                   <tr style={{ background: "#f8fafc" }}>
                     {(type === "weekly"
                       ? ["날짜", "등급", "접수", "보상건수", "완료", "보상비율", "배차지연(건)", "배차지연(%)"]
-                      : ["날짜", "접수", "보상건수", "보상비율", "배차지연(건)", "배차지연(%)"]
+                      : ["날짜", "등급", "접수", "보상건수", "보상비율", "배차지연(건)", "배차지연(%)"]
                     ).map(h => (
                       <th key={h} style={{ padding: "9px 10px", textAlign: h === "날짜" ? "left" : "center", color: C.sub, fontWeight: 700, fontSize: 11, borderBottom: `1px solid ${C.border}`, whiteSpace: "nowrap" }}>{h}</th>
                     ))}
@@ -432,15 +418,13 @@ function Dashboard({ session, onLogout }) {
                           {r.date.slice(5)} ({dow})
                           {isToday && <span style={{ fontSize: 9, background: "#eff6ff", color: C.primary, borderRadius: 4, padding: "1px 4px", marginLeft: 4 }}>오늘</span>}
                         </td>
-                        {type === "weekly" && (
-                          <td style={{ padding: "9px 10px", textAlign: "center" }}>
-                            {r.grade ? (
-                              <span style={{ fontSize: 11, fontWeight: 900, color: gradeColor, background: "#fff", borderRadius: 4, padding: "1px 6px", border: `1px solid ${gradeColor}` }}>{r.grade}</span>
-                            ) : (
-                              <span style={{ color: C.muted, fontSize: 11 }}>-</span>
-                            )}
-                          </td>
-                        )}
+                        <td style={{ padding: "9px 10px", textAlign: "center" }}>
+                          {r.grade ? (
+                            <span style={{ fontSize: 11, fontWeight: 900, color: gradeColor, background: "#fff", borderRadius: 4, padding: "1px 6px", border: `1px solid ${gradeColor}` }}>{r.grade}</span>
+                          ) : (
+                            <span style={{ color: C.muted, fontSize: 11 }}>-</span>
+                          )}
+                        </td>
                         <td style={{ padding: "9px 10px", textAlign: "right", fontWeight: 700 }}>{fmt(r.demand)}</td>
                         <td style={{ padding: "9px 10px", textAlign: "right", color: C.red, fontWeight: 700 }}>{r.fro > 0 ? fmt(r.fro) : "-"}</td>
                         {type === "weekly" && (
