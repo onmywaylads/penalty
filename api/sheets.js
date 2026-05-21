@@ -7,7 +7,6 @@ export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") return res.status(200).end();
 
-  // ── 토큰 검증 ──────────────────────────────────────────────
   const authHeader = req.headers.authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
   const payload = verify(token);
@@ -19,7 +18,6 @@ export default async function handler(req, res) {
   const SPREADSHEET_ID = "1c_43XVjrufy0cEoOA5eBlx49h6u4RoYjm-g02iOztCQ";
 
   try {
-    // access_token 발급
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
@@ -154,21 +152,22 @@ export default async function handler(req, res) {
     let dailyWithGrade = filteredDaily;
 
     if (account.type === "fixed") {
-      // 파주: 고정 관리비
       const totalFro = filteredDaily.reduce((s, d) => s + (d.fro || 0), 0);
       const penalty = totalFro * 30000 * 0.3;
       const expected = account.fee - penalty;
       billing = { type: "fixed", baseFee: account.fee, totalFro, penalty, expected };
     } else if (account.type === "weekly") {
-      // 남동 등: 건당 관리비
       sla = await getSlaGrades(ZONE);
       const weeklyGrades = sla?.weekly || null;
       const dailyGrades = sla?.daily || {};
 
-      // 일별에 Daily 등급 매핑
+      // 디버그 로그
+      console.log("ZONE:", ZONE);
+      console.log("dailyGrades:", JSON.stringify(dailyGrades));
+      console.log("filteredDaily dates:", filteredDaily.map(d => d.date));
+
       dailyWithGrade = filteredDaily.map(d => ({ ...d, grade: dailyGrades[d.date] || null }));
 
-      // 이번주 / 지난주 구간 (월~일)
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const thisWeekStart = mondayOf(today);
@@ -176,7 +175,6 @@ export default async function handler(req, res) {
       const lastWeekStart = new Date(thisWeekStart); lastWeekStart.setDate(lastWeekStart.getDate() - 7);
       const lastWeekEnd = new Date(thisWeekEnd); lastWeekEnd.setDate(lastWeekEnd.getDate() - 7);
 
-      // SLA 시트의 W21/W20/W19에 날짜 매핑 (시트 라벨 + 추정 기간)
       const slaWeekly = weeklyGrades ? [
         { ...weeklyGrades.thisWeek, start: fmtDate(thisWeekStart), end: fmtDate(thisWeekEnd), isCurrent: true },
         { ...weeklyGrades.lastWeek, start: fmtDate(lastWeekStart), end: fmtDate(lastWeekEnd), isCurrent: false },
@@ -187,12 +185,9 @@ export default async function handler(req, res) {
         })(),
       ] : null;
 
-      // 이번주 등급 (=현재 단가 기준)
       const thisGrade = weeklyGrades?.thisWeek?.grade || null;
       const thisUnit = thisGrade ? (GRADE_PRICES[thisGrade] || 0) : 0;
 
-      // 예상 = 지난주(월~일) 완료건수 × 이번주 등급 단가 - 이번주 누적 패널티
-      // ※ 지난주는 시작일 이전이어도 시트에 있는 데이터 그대로 사용
       const lastWeekDaily = daily.filter(d => d.date >= fmtDate(lastWeekStart) && d.date <= fmtDate(lastWeekEnd));
       const lastWeekComplete = sumComplete(lastWeekDaily);
       const thisWeekDaily = filteredDaily.filter(d => d.date >= fmtDate(thisWeekStart) && d.date <= fmtDate(thisWeekEnd));
@@ -210,7 +205,6 @@ export default async function handler(req, res) {
         amount: lastWeekComplete * thisUnit - thisWeekPenalty,
       };
 
-      // 실제 = 이번주 누적 완료건수 × 이번주 등급 단가 - 이번주 누적 패널티
       const thisWeekComplete = sumComplete(thisWeekDaily);
       const actual = {
         demand: sumDemand(thisWeekDaily),
@@ -223,7 +217,6 @@ export default async function handler(req, res) {
         amount: thisWeekComplete * thisUnit - thisWeekPenalty,
       };
 
-      // 주별 상세 (시작일부터)
       const weeks = buildWeeks(account.startDate);
       const todayStr = fmtDate(today);
       const validWeeks = weeks.filter(w => w.start <= todayStr);
@@ -262,7 +255,7 @@ export default async function handler(req, res) {
         estimate,
         actual,
         weeks: weeksData,
-        slaWeekly,        // [{ label: "W21", grade: "B", start, end, isCurrent }, ...]
+        slaWeekly,
         startDate: account.startDate,
       };
     }
@@ -279,7 +272,6 @@ export default async function handler(req, res) {
   }
 }
 
-// 완료건수 = 접수(demand) - 보상건수(fro)
 function sumComplete(arr) {
   return arr.reduce((s, d) => s + Math.max(0, (d.demand || 0) - (d.fro || 0)), 0);
 }
@@ -290,7 +282,6 @@ function sumFro(arr) {
   return arr.reduce((s, d) => s + (d.fro || 0), 0);
 }
 
-// 시작일부터 주 단위로 나누기 (첫 주만 짧을 수 있고, 둘째 주부터 월~일)
 function buildWeeks(startDateStr) {
   const weeks = [];
   const start = new Date(startDateStr + "T00:00:00");
@@ -317,7 +308,7 @@ function buildWeeks(startDateStr) {
 
 function mondayOf(d) {
   const dd = new Date(d);
-  const day = dd.getDay(); // 0=일, 1=월
+  const day = dd.getDay();
   const diff = day === 0 ? -6 : 1 - day;
   dd.setDate(dd.getDate() + diff);
   dd.setHours(0, 0, 0, 0);
