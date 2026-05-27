@@ -2,7 +2,6 @@ const SLA_SHEET_ID = "1dGcKoEnVRFmpUqaDIN8DgKkR_TYKLijIJ6BKZy84IBQ";
 const SLA_SHEET_NAME = "SLA Tracker";
 
 async function fetchSlaSheet(accessToken) {
-  // unmerged values 가져오기 위해 FORMATTED_VALUE 사용
   const range = encodeURIComponent(`${SLA_SHEET_NAME}!A1:BZ300`);
   const resp = await fetch(
     `https://sheets.googleapis.com/v4/spreadsheets/${SLA_SHEET_ID}/values/${range}?valueRenderOption=FORMATTED_VALUE`,
@@ -84,32 +83,39 @@ export async function getSlaGrades(zone) {
       twoWeeksAgo: { label: weeklyColIdxs[2]?.label || "W-", grade: normalizeGrade(zoneRow[weeklyColIdxs[2]?.idx]) },
     };
 
-    // Daily 등급 - 헤더 파싱 대신 R열(idx 17)부터 오늘 기준 역순으로 날짜 매핑
-    // SLA 시트: R열부터 최근 21일치, 최신순(왼쪽이 오늘/최근)
+    // Daily 등급 - 헤더에서 날짜 직접 파싱 (오늘 기준 추정 방식 제거)
     const daily = {};
     const lastWeeklyIdx = Math.max(...weeklyColIdxs.map(c => c.idx));
-    // 서비스퀄리티 컬럼 1개 스킵 후 Daily 시작
-    const dailyStartCol = lastWeeklyIdx + 2;
+    const dailyStartCol = lastWeeklyIdx + 2; // 서비스퀄리티 컬럼 1개 스킵
 
-    // 오늘 기준으로 역순 날짜 생성 (최대 21일)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const headerRow = rows[headerIdx] || [];
+    const currentYear = new Date().getFullYear();
 
-    let dayOffset = 0;
     for (let c = dailyStartCol; c < Math.min(dailyStartCol + 21, zoneRow.length); c++) {
       const g = normalizeGrade(zoneRow[c]);
-      if (g) {
-        const d = new Date(today);
-        d.setDate(today.getDate() - dayOffset);
-        const dateISO = fmtDate(d);
-        daily[dateISO] = g;
-      }
-      dayOffset++;
+      if (!g) continue;
+
+      // 헤더 셀에서 날짜 파싱: "05/26 (화)" 형식
+      const headerCell = String(headerRow[c] || "").trim();
+      const m = headerCell.match(/(\d{2})\/(\d{2})/);
+      if (!m) continue;
+
+      const month = parseInt(m[1]);
+      const day = parseInt(m[2]);
+
+      // 연도 처리: 1월인데 현재 12월이면 다음 연도로 보정
+      let year = currentYear;
+      const nowMonth = new Date().getMonth() + 1;
+      if (month === 1 && nowMonth === 12) year = currentYear + 1;
+      if (month === 12 && nowMonth === 1) year = currentYear - 1;
+
+      const dateISO = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+      daily[dateISO] = g;
     }
 
     console.log("SLA weekly:", JSON.stringify(weekly));
     console.log("SLA daily:", JSON.stringify(daily));
-    console.log("SLA zoneRow[dailyStartCol~+5]:", JSON.stringify(zoneRow.slice(dailyStartCol, dailyStartCol + 5)));
+    console.log("SLA headerRow[dailyStartCol~+5]:", JSON.stringify(headerRow.slice(dailyStartCol, dailyStartCol + 5)));
 
     return { weekly, daily };
   } catch (e) {
