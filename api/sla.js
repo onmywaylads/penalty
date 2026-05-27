@@ -83,39 +83,31 @@ export async function getSlaGrades(zone) {
       twoWeeksAgo: { label: weeklyColIdxs[2]?.label || "W-", grade: normalizeGrade(zoneRow[weeklyColIdxs[2]?.idx]) },
     };
 
-    // Daily 등급 - 헤더에서 날짜 직접 파싱 (오늘 기준 추정 방식 제거)
+    // Daily 등급
+    // 시트 Daily 첫 컬럼 = 어제 (오늘 데이터는 아직 없음)
     const daily = {};
     const lastWeeklyIdx = Math.max(...weeklyColIdxs.map(c => c.idx));
     const dailyStartCol = lastWeeklyIdx + 2; // 서비스퀄리티 컬럼 1개 스킵
 
-    const headerRow = rows[headerIdx] || [];
-    const currentYear = new Date().getFullYear();
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
 
+    let dayOffset = 0;
     for (let c = dailyStartCol; c < Math.min(dailyStartCol + 21, zoneRow.length); c++) {
       const g = normalizeGrade(zoneRow[c]);
-      if (!g) continue;
-
-      // 헤더 셀에서 날짜 파싱: "05/26 (화)" 형식
-      const headerCell = String(headerRow[c] || "").trim();
-      const m = headerCell.match(/(\d{2})\/(\d{2})/);
-      if (!m) continue;
-
-      const month = parseInt(m[1]);
-      const day = parseInt(m[2]);
-
-      // 연도 처리: 1월인데 현재 12월이면 다음 연도로 보정
-      let year = currentYear;
-      const nowMonth = new Date().getMonth() + 1;
-      if (month === 1 && nowMonth === 12) year = currentYear + 1;
-      if (month === 12 && nowMonth === 1) year = currentYear - 1;
-
-      const dateISO = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-      daily[dateISO] = g;
+      if (g) {
+        const d = new Date(yesterday);
+        d.setDate(yesterday.getDate() - dayOffset);
+        const dateISO = fmtDate(d);
+        daily[dateISO] = g;
+      }
+      dayOffset++;
     }
 
     console.log("SLA weekly:", JSON.stringify(weekly));
     console.log("SLA daily:", JSON.stringify(daily));
-    console.log("SLA headerRow[dailyStartCol~+5]:", JSON.stringify(headerRow.slice(dailyStartCol, dailyStartCol + 5)));
+    console.log("SLA zoneRow[dailyStartCol~+5]:", JSON.stringify(zoneRow.slice(dailyStartCol, dailyStartCol + 5)));
 
     return { weekly, daily };
   } catch (e) {
